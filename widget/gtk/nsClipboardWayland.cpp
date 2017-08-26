@@ -383,7 +383,9 @@ nsRetrievalContextWayland::GetClipboardContent(const char* aMimeType,
 {
     NS_ASSERTION(mDataOffer, "Requested data without valid data offer!");
 
+    printf("GetClipboardContent: 1\n");
     if (!mDataOffer) {
+        printf("GetClipboardContent: 2: mDataOffer is NULL.\n");
         // TODO
         // Something went wrong. We're requested to provide clipboard data
         // but we haven't got any from wayland. Looks like rhbz#1455915.
@@ -392,28 +394,62 @@ nsRetrievalContextWayland::GetClipboardContent(const char* aMimeType,
     }
 
     int pipe_fd[2];
-    if (pipe(pipe_fd) == -1)
+    if (pipe(pipe_fd) == -1) {
+        printf("GetClipboardContent: 3: pipe() failed.\n");
         return NS_ERROR_FAILURE;
+    }
 
+    printf("GetClipboardContent: 4.\n");
     wl_data_offer_receive(mDataOffer, aMimeType, pipe_fd[1]);
     close(pipe_fd[1]);
     wl_display_flush(mDisplay);
+    printf("GetClipboardContent: 5.\n");
 
     nsresult rv;
     nsCOMPtr<nsIStorageStream> storageStream;
     nsCOMPtr<nsIBinaryOutputStream> stream;
     int length;
 
-    struct pollfd fds;
-    fds.fd = pipe_fd[0];
-    fds.events = POLLIN;
+    printf("GetClipboardContent: 6: poll start.\n");
 
-    // Choose some reasonable timeout here
-    int ret = poll(&fds, 1, kClipboardTimeout*1000);
-    if (!ret || ret == -1) {
-        close(pipe_fd[0]);
-        return NS_ERROR_FAILURE;
+    while (1) {
+        struct pollfd fds[2];
+        memset(fds, 0, sizeof fds);
+        fds[0].fd = pipe_fd[0];
+        fds[0].events = POLLIN;
+        fds[1].fd = wl_display_get_fd(mDisplay);
+        fds[1].events = POLLIN;
+
+        // Choose some reasonable timeout here
+        printf("GetClipboardContent: 7: 0: poll start.\n");
+        int ret = poll(fds, 2, kClipboardTimeout/1000);
+        if (!ret || ret == -1) {
+            if (ret == -1)
+                printf("GetClipboardContent: 7: 1: poll failed: %s\n", strerror(errno));
+            else
+                printf("GetClipboardContent: 7: 2: poll timed out.\n");
+            close(pipe_fd[0]);
+            return NS_ERROR_FAILURE;
+        }
+        printf("GetClipboardContent: 7: 3: revents=[0]:%d, [1]:%d.\n", fds[0].revents, fds[1].revents);
+
+        if (fds[0].revents & (POLLIN | POLLHUP)) {
+            printf("GetClipboardContent: 7: 4: [0] in.\n");
+            break;
+        }
+        if (fds[1].revents & POLLHUP) {
+            printf("GetClipboardContent: 7: 5: [1] hup. wl disconnected?\n");
+            close(pipe_fd[0]);
+            return NS_ERROR_FAILURE;
+        }
+        if (fds[1].revents & POLLIN) {
+            printf("GetClipboardContent: 7: 6: [1] in.\n");
+            gtk_main_iteration();
+            printf("GetClipboardContent: 7: 7: gtk_main_iteration() done.\n");
+        }
+        printf("GetClipboardContent: 7: 8: next.\n");
     }
+    printf("GetClipboardContent: 8: poll done.\n");
 
     #define BUFFER_SIZE 4096
 
@@ -421,27 +457,35 @@ nsRetrievalContextWayland::GetClipboardContent(const char* aMimeType,
     nsCOMPtr<nsIOutputStream> outputStream;
     rv = storageStream->GetOutputStream(0, getter_AddRefs(outputStream));
     if (NS_FAILED(rv)) {
+        printf("GetClipboardContent: 9: GetOutputStream() failed.\n");
         close(pipe_fd[0]);
         return NS_ERROR_FAILURE;
     }
 
+    printf("GetClipboardContent: 10: reading loop.\n");
     do {
         char buffer[BUFFER_SIZE];
+        printf("GetClipboardContent: 11: before read.\n");
         length = read(pipe_fd[0], buffer, sizeof(buffer));
+        printf("GetClipboardContent: 12: after read. len=%d.\n", length);
         if (length == 0 || length == -1)
             break;
 
         uint32_t ret;
         rv = outputStream->Write(buffer, length, &ret);
     } while(NS_SUCCEEDED(rv) && length == BUFFER_SIZE);
+    printf("GetClipboardContent: 13: end of reading loop.\n");
 
     outputStream->Close();
     close(pipe_fd[0]);
+    printf("GetClipboardContent: 14: closed.\n");
 
     rv = storageStream->GetLength(aContentLength);
     NS_ENSURE_SUCCESS(rv, rv);
+    printf("GetClipboardContent: 15: length=%d.\n", *aContentLength);
 
     rv = storageStream->NewInputStream(0, aResult);
     NS_ENSURE_SUCCESS(rv, rv);
+    printf("GetClipboardContent: 16: return.\n");
     return NS_OK;
 }
