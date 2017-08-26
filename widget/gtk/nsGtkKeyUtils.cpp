@@ -196,6 +196,8 @@ KeymapWrapper::Init()
 
     if (GDK_IS_X11_DISPLAY(gdk_display_get_default()))
         InitBySystemSettings();
+    else
+        mModifierMasks[INDEX_ALT] = 1 << 3;
 
     gdk_window_add_filter(nullptr, FilterEvents, this);
 
