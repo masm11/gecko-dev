@@ -121,6 +121,8 @@ mod bindings {
         static ref SEARCH_PATHS: Vec<PathBuf> = vec![
             DISTDIR_PATH.join("include"),
             DISTDIR_PATH.join("include/nspr"),
+	    PathBuf::from("/usr/include/nspr"),
+	    PathBuf::from("/usr/include/pixman-1"),
         ];
         static ref ADDED_PATHS: Mutex<HashSet<PathBuf>> = Mutex::new(HashSet::new());
         static ref LAST_MODIFIED: Mutex<SystemTime> =
