@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use cssparser::{self, Parser as CssParser, SourcePosition, SourceLocation};
+use cssparser::{self, SourceLocation};
 use html5ever::{Namespace as NsAtom};
 use media_queries::CSSErrorReporterTest;
 use parking_lot::RwLock;
@@ -241,6 +241,7 @@ fn test_parse_stylesheet() {
                     },
                 })))
             ], &stylesheet.shared_lock),
+            source_map_url: RwLock::new(None),
         },
         media: Arc::new(stylesheet.shared_lock.wrap(MediaList::empty())),
         shared_lock: stylesheet.shared_lock.clone(),
@@ -270,21 +271,15 @@ impl CSSInvalidErrorReporterTest {
 }
 
 impl ParseErrorReporter for CSSInvalidErrorReporterTest {
-    fn report_error<'a>(&self,
-                        input: &mut CssParser,
-                        position: SourcePosition,
-                        error: ContextualParseError<'a>,
-                        url: &ServoUrl,
-                        line_number_offset: u64) {
-
-        let location = input.source_location(position);
-        let line_offset = location.line + line_number_offset as u32;
-
+    fn report_error(&self,
+                    url: &ServoUrl,
+                    location: SourceLocation,
+                    error: ContextualParseError) {
         let mut errors = self.errors.lock().unwrap();
         errors.push(
             CSSError{
                 url: url.clone(),
-                line: line_offset,
+                line: location.line,
                 column: location.column,
                 message: error.to_string()
             }
@@ -355,4 +350,23 @@ fn test_no_report_unrecognized_vendor_properties() {
                 Custom(PropertyDeclaration(UnknownProperty(\"-moz-background-color\")))",
                error.message);
     assert!(errors.is_empty());
+}
+
+#[test]
+fn test_source_map_url() {
+    let tests = vec![
+        ("", None),
+        ("/*# sourceMappingURL=something */", Some("something".to_string())),
+    ];
+
+    for test in tests {
+        let url = ServoUrl::parse("about::test").unwrap();
+        let lock = SharedRwLock::new();
+        let media = Arc::new(lock.wrap(MediaList::empty()));
+        let stylesheet = Stylesheet::from_str(test.0, url.clone(), Origin::UserAgent, media, lock,
+                                              None, &CSSErrorReporterTest, QuirksMode::NoQuirks,
+                                              0u64);
+        let url_opt = stylesheet.contents.source_map_url.read();
+        assert_eq!(*url_opt, test.1);
+    }
 }

@@ -7,34 +7,31 @@ use api::{DeviceIntPoint, DeviceIntRect, DeviceIntSize, DeviceUintRect, DeviceUi
 use api::{ExtendMode, FontKey, FontRenderMode, GlyphInstance, GlyphOptions, GradientStop};
 use api::{ImageKey, ImageRendering, ItemRange, LayerPoint, LayerRect, LayerSize};
 use api::{LayerToScrollTransform, LayerVector2D, LayoutVector2D, LineOrientation, LineStyle};
-use api::{LocalClip, PipelineId, RepeatMode, ScrollSensitivity, TextShadow, TileOffset};
-use api::{TransformStyle, WebGLContextId, WorldPixel, YuvColorSpace, YuvData};
+use api::{LocalClip, PipelineId, RepeatMode, ScrollSensitivity, SubpixelDirection, TextShadow};
+use api::{TileOffset, TransformStyle, WorldPixel, YuvColorSpace, YuvData};
 use app_units::Au;
-use fnv::FnvHasher;
 use frame::FrameId;
 use gpu_cache::GpuCache;
-use internal_types::HardwareCompositeOp;
+use internal_types::{FastHashMap, HardwareCompositeOp};
 use mask_cache::{ClipMode, ClipRegion, ClipSource, MaskCacheInfo};
 use plane_split::{BspSplitter, Polygon, Splitter};
 use prim_store::{GradientPrimitiveCpu, ImagePrimitiveCpu, LinePrimitive, PrimitiveKind};
-use prim_store::{ImagePrimitiveKind, PrimitiveContainer, PrimitiveIndex};
+use prim_store::{PrimitiveContainer, PrimitiveIndex};
 use prim_store::{PrimitiveStore, RadialGradientPrimitiveCpu, TextRunMode};
 use prim_store::{RectanglePrimitive, TextRunPrimitiveCpu, TextShadowPrimitiveCpu};
 use prim_store::{BoxShadowPrimitiveCpu, TexelRect, YuvImagePrimitiveCpu};
 use profiler::{FrameProfileCounters, GpuCacheProfileCounters, TextureCacheProfileCounters};
-use render_task::{AlphaRenderItem, ClipWorkItem, MaskCacheKey, RenderTask, RenderTaskIndex};
-use render_task::{RenderTaskId, RenderTaskLocation};
+use render_task::{AlphaRenderItem, ClipWorkItem, RenderTask};
+use render_task::{RenderTaskTree, RenderTaskId, RenderTaskLocation};
 use resource_cache::ResourceCache;
 use clip_scroll_node::{ClipInfo, ClipScrollNode, NodeType};
 use clip_scroll_tree::ClipScrollTree;
 use std::{cmp, f32, i32, mem, usize};
-use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
 use euclid::{SideOffsets2D, vec2, vec3};
 use tiling::{ContextIsolation, StackingContextIndex};
 use tiling::{ClipScrollGroup, ClipScrollGroupIndex, CompositeOps, DisplayListMap, Frame};
 use tiling::{PackedLayer, PackedLayerIndex, PrimitiveFlags, PrimitiveRunCmd, RenderPass};
-use tiling::{RenderTargetContext, RenderTaskCollection, ScrollbarPrimitive, StackingContext};
+use tiling::{RenderTargetContext, ScrollbarPrimitive, StackingContext};
 use util::{self, pack_as_float, subtract_rect, recycle_vec};
 use util::{MatrixHelpers, RectHelpers};
 
@@ -106,7 +103,6 @@ pub struct FrameBuilderConfig {
     pub enable_scrollbars: bool,
     pub default_font_render_mode: FontRenderMode,
     pub debug: bool,
-    pub cache_expiry_frames: u32,
 }
 
 pub struct FrameBuilder {
@@ -118,9 +114,8 @@ pub struct FrameBuilder {
 
     stacking_context_store: Vec<StackingContext>,
     clip_scroll_group_store: Vec<ClipScrollGroup>,
-    clip_scroll_group_indices: HashMap<ClipAndScrollInfo,
-                                       ClipScrollGroupIndex,
-                                       BuildHasherDefault<FnvHasher>>,
+    clip_scroll_group_indices: FastHashMap<ClipAndScrollInfo,
+                                           ClipScrollGroupIndex>,
     packed_layers: Vec<PackedLayer>,
 
     // A stack of the current text-shadow primitives.
@@ -151,7 +146,7 @@ impl FrameBuilder {
                 FrameBuilder {
                     stacking_context_store: recycle_vec(prev.stacking_context_store),
                     clip_scroll_group_store: recycle_vec(prev.clip_scroll_group_store),
-                    clip_scroll_group_indices: HashMap::default(),
+                    clip_scroll_group_indices: FastHashMap::default(),
                     cmds: recycle_vec(prev.cmds),
                     packed_layers: recycle_vec(prev.packed_layers),
                     shadow_prim_stack: recycle_vec(prev.shadow_prim_stack),
@@ -169,7 +164,7 @@ impl FrameBuilder {
                 FrameBuilder {
                     stacking_context_store: Vec::new(),
                     clip_scroll_group_store: Vec::new(),
-                    clip_scroll_group_indices: HashMap::default(),
+                    clip_scroll_group_indices: FastHashMap::default(),
                     cmds: Vec::new(),
                     packed_layers: Vec::new(),
                     shadow_prim_stack: Vec::new(),
@@ -327,9 +322,14 @@ impl FrameBuilder {
                                 pipeline_id: PipelineId,
                                 rect: &LayerRect,
                                 transform: &LayerToScrollTransform,
+                                origin_in_parent_reference_frame: LayerVector2D,
                                 clip_scroll_tree: &mut ClipScrollTree)
                                 -> ClipId {
-        let new_id = clip_scroll_tree.add_reference_frame(rect, transform, pipeline_id, parent_id);
+        let new_id = clip_scroll_tree.add_reference_frame(rect,
+                                                          transform,
+                                                          origin_in_parent_reference_frame,
+                                                          pipeline_id,
+                                                          parent_id);
         self.reference_frame_stack.push(new_id);
         new_id
     }
@@ -357,10 +357,10 @@ impl FrameBuilder {
 
         let root_id = clip_scroll_tree.root_reference_frame_id();
         if let Some(root_node) = clip_scroll_tree.nodes.get_mut(&root_id) {
-            if let NodeType::ReferenceFrame(ref mut transform) = root_node.node_type {
-                *transform = LayerToScrollTransform::create_translation(viewport_offset.x,
-                                                                        viewport_offset.y,
-                                                                        0.0);
+            if let NodeType::ReferenceFrame(ref mut info) = root_node.node_type {
+                info.transform = LayerToScrollTransform::create_translation(viewport_offset.x,
+                                                                            viewport_offset.y,
+                                                                            0.0);
             }
             root_node.local_clip_rect = viewport_clip;
         }
@@ -379,7 +379,12 @@ impl FrameBuilder {
                      -> ClipId {
         let viewport_rect = LayerRect::new(LayerPoint::zero(), *viewport_size);
         let identity = &LayerToScrollTransform::identity();
-        self.push_reference_frame(None, pipeline_id, &viewport_rect, identity, clip_scroll_tree);
+        self.push_reference_frame(None,
+                                  pipeline_id,
+                                  &viewport_rect,
+                                  identity,
+                                  LayerVector2D::zero(),
+                                  clip_scroll_tree);
 
         let topmost_scrolling_node_id = ClipId::root_scroll_node(pipeline_id);
         clip_scroll_tree.topmost_scrolling_node_id = topmost_scrolling_node_id;
@@ -908,9 +913,15 @@ impl FrameBuilder {
 
         // Shadows never use subpixel AA, but need to respect the alpha/mono flag
         // for reftests.
-        let shadow_render_mode = match self.config.default_font_render_mode {
-            FontRenderMode::Subpixel | FontRenderMode::Alpha => FontRenderMode::Alpha,
-            FontRenderMode::Mono => FontRenderMode::Mono,
+        let (shadow_render_mode, subpx_dir) = match self.config.default_font_render_mode {
+            FontRenderMode::Subpixel | FontRenderMode::Alpha => {
+                // TODO(gw): Expose subpixel direction in API once WR supports
+                //           vertical text runs.
+                (FontRenderMode::Alpha, SubpixelDirection::Horizontal)
+            }
+            FontRenderMode::Mono => {
+                (FontRenderMode::Mono, SubpixelDirection::None)
+            }
         };
 
         let prim = TextRunPrimitiveCpu {
@@ -918,12 +929,14 @@ impl FrameBuilder {
             logical_font_size: size,
             glyph_range,
             glyph_count,
-            glyph_instances: Vec::new(),
+            glyph_gpu_blocks: Vec::new(),
+            glyph_keys: Vec::new(),
             glyph_options,
             normal_render_mode,
             shadow_render_mode,
             offset: run_offset,
             color: *color,
+            subpx_dir,
         };
 
         // Text shadows that have a blur radius of 0 need to be rendered as normal
@@ -1192,24 +1205,6 @@ impl FrameBuilder {
         }
     }
 
-    pub fn add_webgl_rectangle(&mut self,
-                               clip_and_scroll: ClipAndScrollInfo,
-                               rect: LayerRect,
-                               local_clip: &LocalClip,
-                               context_id: WebGLContextId) {
-        let prim_cpu = ImagePrimitiveCpu {
-            kind: ImagePrimitiveKind::WebGL(context_id),
-            gpu_blocks: [ [rect.size.width, rect.size.height, 0.0, 0.0].into(),
-                          TexelRect::invalid().into() ],
-        };
-
-        self.add_primitive(clip_and_scroll,
-                           &rect,
-                           local_clip,
-                           &[],
-                           PrimitiveContainer::Image(prim_cpu));
-    }
-
     pub fn add_image(&mut self,
                      clip_and_scroll: ClipAndScrollInfo,
                      rect: LayerRect,
@@ -1223,10 +1218,10 @@ impl FrameBuilder {
         let sub_rect_block = sub_rect.unwrap_or(TexelRect::invalid()).into();
 
         let prim_cpu = ImagePrimitiveCpu {
-            kind: ImagePrimitiveKind::Image(image_key,
-                                            image_rendering,
-                                            tile,
-                                            *tile_spacing),
+            image_key,
+            image_rendering,
+            tile_offset: tile,
+            tile_spacing: *tile_spacing,
             gpu_blocks: [ [ stretch_size.width,
                             stretch_size.height,
                             tile_spacing.width,
@@ -1281,6 +1276,7 @@ impl FrameBuilder {
                                                 display_lists: &DisplayListMap,
                                                 resource_cache: &mut ResourceCache,
                                                 gpu_cache: &mut GpuCache,
+                                                render_tasks: &mut RenderTaskTree,
                                                 profile_counters: &mut FrameProfileCounters,
                                                 device_pixel_ratio: f32) {
         profile_scope!("cull");
@@ -1290,6 +1286,7 @@ impl FrameBuilder {
                                                            display_lists,
                                                            resource_cache,
                                                            gpu_cache,
+                                                           render_tasks,
                                                            profile_counters,
                                                            device_pixel_ratio);
     }
@@ -1343,18 +1340,15 @@ impl FrameBuilder {
 
     fn build_render_task(&mut self,
                          clip_scroll_tree: &ClipScrollTree,
-                         gpu_cache: &mut GpuCache)
-                         -> (RenderTask, usize) {
+                         gpu_cache: &mut GpuCache,
+                         render_tasks: &mut RenderTaskTree)
+                         -> RenderTaskId {
         profile_scope!("build_render_task");
 
         let mut next_z = 0;
-        let mut next_task_index = RenderTaskIndex(0);
-
         let mut sc_stack: Vec<StackingContextIndex> = Vec::new();
-        let mut current_task = RenderTask::new_alpha_batch(next_task_index,
-                                                           DeviceIntPoint::zero(),
+        let mut current_task = RenderTask::new_alpha_batch(DeviceIntPoint::zero(),
                                                            RenderTaskLocation::Fixed);
-        next_task_index.0 += 1;
         // A stack of the alpha batcher tasks. We create them on the way down,
         // and then actually populate with items and dependencies on the way up.
         let mut alpha_task_stack = Vec::new();
@@ -1363,7 +1357,7 @@ impl FrameBuilder {
         // The stacking contexts that fall into this category are
         //  - ones with `ContextIsolation::Items`, for their actual items to be backed
         //  - immediate children of `ContextIsolation::Items`
-        let mut preserve_3d_map: HashMap<StackingContextIndex, RenderTask> = HashMap::new();
+        let mut preserve_3d_map: FastHashMap<StackingContextIndex, RenderTaskId> = FastHashMap::default();
         // The plane splitter stack, using a simple BSP tree.
         let mut splitter_stack = Vec::new();
 
@@ -1388,8 +1382,7 @@ impl FrameBuilder {
 
                     if stacking_context.isolation == ContextIsolation::Full && composite_count == 0 {
                         alpha_task_stack.push(current_task);
-                        current_task = RenderTask::new_dynamic_alpha_batch(next_task_index, stacking_context_rect);
-                        next_task_index.0 += 1;
+                        current_task = RenderTask::new_dynamic_alpha_batch(stacking_context_rect);
                     }
 
                     if parent_isolation == Some(ContextIsolation::Items) ||
@@ -1398,8 +1391,7 @@ impl FrameBuilder {
                             splitter_stack.push(BspSplitter::new());
                         }
                         alpha_task_stack.push(current_task);
-                        current_task = RenderTask::new_dynamic_alpha_batch(next_task_index, stacking_context_rect);
-                        next_task_index.0 += 1;
+                        current_task = RenderTask::new_dynamic_alpha_batch(stacking_context_rect);
                         //Note: technically, we shouldn't make a new alpha task for "preserve-3d" contexts
                         // that have no child items (only other stacking contexts). However, we don't know if
                         // there are any items at this time (in `PushStackingContext`).
@@ -1414,8 +1406,7 @@ impl FrameBuilder {
 
                     for _ in 0..composite_count {
                         alpha_task_stack.push(current_task);
-                        current_task = RenderTask::new_dynamic_alpha_batch(next_task_index, stacking_context_rect);
-                        next_task_index.0 += 1;
+                        current_task = RenderTask::new_dynamic_alpha_batch(stacking_context_rect);
                     }
                 }
                 PrimitiveRunCmd::PopStackingContext => {
@@ -1433,43 +1424,46 @@ impl FrameBuilder {
 
                     if stacking_context.isolation == ContextIsolation::Full && composite_count == 0 {
                         let mut prev_task = alpha_task_stack.pop().unwrap();
+                        let current_task_id = render_tasks.add(current_task);
                         let item = AlphaRenderItem::HardwareComposite(stacking_context_index,
-                                                                      current_task.id,
+                                                                      current_task_id,
                                                                       HardwareCompositeOp::PremultipliedAlpha,
                                                                       next_z);
                         next_z += 1;
-                        prev_task.as_alpha_batch().items.push(item);
-                        prev_task.children.push(current_task);
+                        prev_task.as_alpha_batch_mut().items.push(item);
+                        prev_task.children.push(current_task_id);
                         current_task = prev_task;
                     }
 
                     for filter in &stacking_context.composite_ops.filters {
                         let mut prev_task = alpha_task_stack.pop().unwrap();
+                        let current_task_id = render_tasks.add(current_task);
                         let item = AlphaRenderItem::Blend(stacking_context_index,
-                                                          current_task.id,
+                                                          current_task_id,
                                                           *filter,
                                                           next_z);
                         next_z += 1;
-                        prev_task.as_alpha_batch().items.push(item);
-                        prev_task.children.push(current_task);
+                        prev_task.as_alpha_batch_mut().items.push(item);
+                        prev_task.children.push(current_task_id);
                         current_task = prev_task;
                     }
 
                     if let Some(mix_blend_mode) = stacking_context.composite_ops.mix_blend_mode {
-                        let readback_task =
-                            RenderTask::new_readback(stacking_context_index,
-                                                     stacking_context.screen_bounds);
+                        let backdrop_task =
+                            RenderTask::new_readback(stacking_context.screen_bounds);
+                        let source_task_id = render_tasks.add(current_task);
+                        let backdrop_task_id = render_tasks.add(backdrop_task);
 
                         let mut prev_task = alpha_task_stack.pop().unwrap();
                         let item = AlphaRenderItem::Composite(stacking_context_index,
-                                                              readback_task.id,
-                                                              current_task.id,
+                                                              source_task_id,
+                                                              backdrop_task_id,
                                                               mix_blend_mode,
                                                               next_z);
                         next_z += 1;
-                        prev_task.as_alpha_batch().items.push(item);
-                        prev_task.children.push(current_task);
-                        prev_task.children.push(readback_task);
+                        prev_task.as_alpha_batch_mut().items.push(item);
+                        prev_task.children.push(source_task_id);
+                        prev_task.children.push(backdrop_task_id);
                         current_task = prev_task;
                     }
 
@@ -1478,13 +1472,14 @@ impl FrameBuilder {
                         //Note: we don't register the dependent tasks here. It's only done
                         // when we are out of the `preserve-3d` branch (see the code below),
                         // since this is only where the parent task is known.
-                        preserve_3d_map.insert(stacking_context_index, current_task);
+                        let current_task_id = render_tasks.add(current_task);
+                        preserve_3d_map.insert(stacking_context_index, current_task_id);
                         current_task = alpha_task_stack.pop().unwrap();
                     }
 
                     if parent_isolation != Some(ContextIsolation::Items) &&
                        stacking_context.isolation == ContextIsolation::Items {
-                        debug!("\tsplitter[{}]: flush {:?}", splitter_stack.len(), current_task.id);
+                        debug!("\tsplitter[{}]: flush", splitter_stack.len());
                         let mut splitter = splitter_stack.pop().unwrap();
                         // Flush the accumulated plane splits onto the task tree.
                         // Notice how this is done before splitting in order to avoid duplicate tasks.
@@ -1492,7 +1487,7 @@ impl FrameBuilder {
                         // Z axis is directed at the screen, `sort` is ascending, and we need back-to-front order.
                         for poly in splitter.sort(vec3(0.0, 0.0, 1.0)) {
                             let sc_index = StackingContextIndex(poly.anchor);
-                            let task_id = preserve_3d_map[&sc_index].id;
+                            let task_id = preserve_3d_map[&sc_index];
                             debug!("\t\tproduce {:?} -> {:?} for {:?}", sc_index, poly, task_id);
                             let pp = &poly.points;
                             let gpu_blocks = [
@@ -1502,7 +1497,7 @@ impl FrameBuilder {
                             ];
                             let handle = gpu_cache.push_per_frame_blocks(&gpu_blocks);
                             let item = AlphaRenderItem::SplitComposite(sc_index, task_id, handle, next_z);
-                            current_task.as_alpha_batch().items.push(item);
+                            current_task.as_alpha_batch_mut().items.push(item);
                         }
                         preserve_3d_map.clear();
                         next_z += 1;
@@ -1520,7 +1515,7 @@ impl FrameBuilder {
                         continue
                     }
 
-                    debug!("\trun of {} items into {:?}", prim_count, current_task.id);
+                    debug!("\trun of {} items", prim_count);
 
                     for i in 0..prim_count {
                         let prim_index = PrimitiveIndex(first_prim_index.0 + i);
@@ -1529,15 +1524,15 @@ impl FrameBuilder {
                             let prim_metadata = self.prim_store.get_metadata(prim_index);
 
                             // Add any dynamic render tasks needed to render this primitive
-                            if let Some(ref render_task) = prim_metadata.render_task {
-                                current_task.children.push(render_task.clone());
+                            if let Some(render_task_id) = prim_metadata.render_task_id {
+                                current_task.children.push(render_task_id);
                             }
-                            if let Some(ref clip_task) = prim_metadata.clip_task {
-                                current_task.children.push(clip_task.clone());
+                            if let Some(clip_task_id) = prim_metadata.clip_task_id {
+                                current_task.children.push(clip_task_id);
                             }
 
                             let item = AlphaRenderItem::Primitive(Some(group_index), prim_index, next_z);
-                            current_task.as_alpha_batch().items.push(item);
+                            current_task.as_alpha_batch_mut().items.push(item);
                             next_z += 1;
                         }
                     }
@@ -1547,8 +1542,7 @@ impl FrameBuilder {
 
         debug_assert!(alpha_task_stack.is_empty());
         debug_assert!(preserve_3d_map.is_empty());
-        debug_assert_eq!(current_task.id, RenderTaskId::Static(RenderTaskIndex(0)));
-        (current_task, next_task_index.0)
+        render_tasks.add(current_task)
     }
 
     pub fn build(&mut self,
@@ -1583,19 +1577,21 @@ impl FrameBuilder {
 
         self.update_scroll_bars(clip_scroll_tree, gpu_cache);
 
+        let mut render_tasks = RenderTaskTree::new();
+
         self.build_layer_screen_rects_and_cull_layers(&screen_rect,
                                                       clip_scroll_tree,
                                                       display_lists,
                                                       resource_cache,
                                                       gpu_cache,
+                                                      &mut render_tasks,
                                                       &mut profile_counters,
                                                       device_pixel_ratio);
 
-        let (main_render_task, static_render_task_count) = self.build_render_task(clip_scroll_tree, gpu_cache);
-        let mut render_tasks = RenderTaskCollection::new(static_render_task_count);
+        let main_render_task_id = self.build_render_task(clip_scroll_tree, gpu_cache, &mut render_tasks);
 
         let mut required_pass_count = 0;
-        main_render_task.max_depth(0, &mut required_pass_count);
+        render_tasks.max_depth(main_render_task_id, 0, &mut required_pass_count);
 
         resource_cache.block_until_all_resources_added(gpu_cache, texture_cache_profile);
 
@@ -1606,12 +1602,11 @@ impl FrameBuilder {
         // Do the allocations now, assigning each tile's tasks to a render
         // pass and target as required.
         for index in 0..required_pass_count {
-            passes.push(RenderPass::new(index as isize,
-                                        index == required_pass_count-1,
+            passes.push(RenderPass::new(index == required_pass_count-1,
                                         cache_size));
         }
 
-        main_render_task.assign_to_passes(passes.len() - 1, &mut passes);
+        render_tasks.assign_to_passes(main_render_task_id, passes.len() - 1, &mut passes);
 
         for pass in &mut passes {
             let ctx = RenderTargetContext {
@@ -1631,6 +1626,8 @@ impl FrameBuilder {
 
         let gpu_cache_updates = gpu_cache.end_frame(gpu_cache_profile);
 
+        render_tasks.build();
+
         resource_cache.end_frame();
 
         Frame {
@@ -1641,7 +1638,7 @@ impl FrameBuilder {
             passes,
             cache_size,
             layer_texture_data: self.packed_layers.clone(),
-            render_task_data: render_tasks.render_task_data,
+            render_tasks,
             deferred_resolves,
             gpu_cache_updates: Some(gpu_cache_updates),
         }
@@ -1665,6 +1662,7 @@ struct LayerRectCalculationAndCullingPass<'a> {
     profile_counters: &'a mut FrameProfileCounters,
     device_pixel_ratio: f32,
     stacking_context_stack: Vec<StackingContextIndex>,
+    render_tasks: &'a mut RenderTaskTree,
 
     /// A cached clip info stack, which should handle the most common situation,
     /// which is that we are using the same clip info stack that we were using
@@ -1683,6 +1681,7 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
                       display_lists: &'a DisplayListMap,
                       resource_cache: &'a mut ResourceCache,
                       gpu_cache: &'a mut GpuCache,
+                      render_tasks: &'a mut RenderTaskTree,
                       profile_counters: &'a mut FrameProfileCounters,
                       device_pixel_ratio: f32) {
 
@@ -1698,6 +1697,7 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
             stacking_context_stack: Vec::new(),
             current_clip_stack: Vec::new(),
             current_clip_info: None,
+            render_tasks,
         };
         pass.run();
     }
@@ -1769,7 +1769,10 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
                 if let Some(mask) = clip_source.image_mask() {
                     // We don't add the image mask for resolution, because
                     // layer masks are resolved later.
-                    self.resource_cache.request_image(mask.image, ImageRendering::Auto, None);
+                    self.resource_cache.request_image(mask.image,
+                                                      ImageRendering::Auto,
+                                                      None,
+                                                      self.gpu_cache);
                 }
             }
         }
@@ -1875,9 +1878,9 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
             current_id = node.parent;
 
             let clip = match node.node_type {
-                NodeType::ReferenceFrame(transform) => {
+                NodeType::ReferenceFrame(ref info) => {
                     // if the transform is non-aligned, bake the next LCCR into the clip mask
-                    next_node_needs_region_mask |= !transform.preserves_2d_axis_alignment();
+                    next_node_needs_region_mask |= !info.transform.preserves_2d_axis_alignment();
                     continue
                 },
                 NodeType::Clip(ref clip) if clip.mask_cache_info.is_masking() => clip,
@@ -1979,7 +1982,8 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
                                                                    &packed_layer.transform,
                                                                    self.device_pixel_ratio,
                                                                    display_list,
-                                                                   TextRunMode::Normal);
+                                                                   TextRunMode::Normal,
+                                                                   &mut self.render_tasks);
 
             stacking_context.screen_bounds = stacking_context.screen_bounds.union(&prim_screen_rect);
             stacking_context.isolated_items_bounds = stacking_context.isolated_items_bounds.union(&prim_local_rect);
@@ -1990,7 +1994,7 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
                 // stacking context. This means that two primitives which are only clipped
                 // by the stacking context stack can share clip masks during render task
                 // assignment to targets.
-                let (mask_key, mask_rect, extra) = match prim_metadata.clip_cache_info {
+                let (cache_key, mask_rect, extra) = match prim_metadata.clip_cache_info {
                     Some(ref info) => {
                         // Take into account the actual clip info of the primitive, and
                         // mutate the current bounds accordingly.
@@ -2003,22 +2007,24 @@ impl<'a> LayerRectCalculationAndCullingPass<'a> {
                             }
                             _ => prim_screen_rect,
                         };
-                        (MaskCacheKey::Primitive(prim_index),
+                        (None,
                          mask_rect,
                          Some((packed_layer_index, info.strip_aligned())))
                     }
                     None => {
-                        //Note: can't use `prim_bounding_rect` since
-                        // the primitive ID is not a part of the task key
-                        (MaskCacheKey::ClipNode(clip_and_scroll.clip_node_id()),
+                        (Some(clip_and_scroll.clip_node_id()),
                          clip_bounds,
                          None)
                     }
                 };
-                prim_metadata.clip_task = RenderTask::new_mask(mask_rect,
-                                                               mask_key,
-                                                               &self.current_clip_stack,
-                                                               extra)
+                let clip_task = RenderTask::new_mask(cache_key,
+                                                     mask_rect,
+                                                     &self.current_clip_stack,
+                                                     extra);
+                let render_tasks = &mut self.render_tasks;
+                prim_metadata.clip_task_id = clip_task.map(|clip_task| {
+                    render_tasks.add(clip_task)
+                });
             }
 
             self.profile_counters.visible_primitives.inc();

@@ -43,8 +43,6 @@ private:
     return principal.forget();
   }
   // These methods are called off the main thread.
-  // The mode is initially MODE_PLAYBACK.
-  void SetReadMode(MediaCacheStream::ReadMode aMode) override {}
   nsresult ReadAt(int64_t aOffset, char* aBuffer,
                   uint32_t aCount, uint32_t* aBytes) override
   {
@@ -70,8 +68,6 @@ private:
     return std::max(aOffset, int64_t(mLength));
   }
   bool IsDataCachedToEndOfResource(int64_t aOffset) override { return true; }
-  bool IsSuspendedByCache() override { return false; }
-  bool IsSuspended() override { return false; }
   nsresult ReadFromCache(char* aBuffer,
                          int64_t aOffset,
                          uint32_t aCount) override
@@ -90,8 +86,6 @@ private:
     aRanges += MediaByteRange(0, int64_t(mLength));
     return NS_OK;
   }
-
-  bool IsTransportSeekable() override { return true; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override
   {

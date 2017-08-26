@@ -49,6 +49,7 @@
 #include "nsDOMClassInfo.h"
 #include "mozilla/Services.h"
 #include "nsScreen.h"
+#include "ChildIterator.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasicEvents.h"
@@ -195,6 +196,7 @@
 #include "mozilla/dom/Comment.h"
 #include "nsTextNode.h"
 #include "mozilla/dom/Link.h"
+#include "mozilla/dom/HTMLCollectionBinding.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/dom/Touch.h"
@@ -245,7 +247,7 @@
 #include "nsIStructuredCloneContainer.h"
 #include "nsIMutableArray.h"
 #include "mozilla/dom/DOMStringList.h"
-#include "nsWindowMemoryReporter.h"
+#include "nsWindowSizes.h"
 #include "mozilla/dom/Location.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "gfxPrefs.h"
@@ -272,9 +274,6 @@
 #include "nsISpeculativeConnect.h"
 
 #include "mozilla/MediaManager.h"
-#ifdef MOZ_WEBRTC
-#include "IPeerConnection.h"
-#endif // MOZ_WEBRTC
 
 #include "nsIURIClassifier.h"
 #include "mozilla/DocumentStyleRootIterator.h"
@@ -514,11 +513,130 @@ nsIdentifierMapEntry::SetImageElement(Element* aElement)
   }
 }
 
+namespace mozilla {
+namespace dom {
+class SimpleHTMLCollection final : public nsSimpleContentList
+                                 , public nsIHTMLCollection
+{
+public:
+  explicit SimpleHTMLCollection(nsINode* aRoot) : nsSimpleContentList(aRoot) {}
+
+  NS_DECL_ISUPPORTS_INHERITED
+
+  // nsIDOMHTMLCollection
+  NS_DECL_NSIDOMHTMLCOLLECTION
+
+  virtual nsINode* GetParentObject() override
+  {
+    return nsSimpleContentList::GetParentObject();
+  }
+  virtual Element* GetElementAt(uint32_t aIndex) override
+  {
+    return mElements.SafeElementAt(aIndex)->AsElement();
+  }
+
+  virtual Element* GetFirstNamedElement(const nsAString& aName,
+                                        bool& aFound) override
+  {
+    aFound = false;
+    nsCOMPtr<nsIAtom> name = NS_Atomize(aName);
+    for (uint32_t i = 0; i < mElements.Length(); i++) {
+      MOZ_DIAGNOSTIC_ASSERT(mElements[i]);
+      Element* element = mElements[i]->AsElement();
+      if (element->GetID() == name ||
+          (element->HasName() &&
+           element->GetParsedAttr(nsGkAtoms::name)->GetAtomValue() == name)) {
+        aFound = true;
+        return element;
+      }
+    }
+    return nullptr;
+  }
+
+  virtual void GetSupportedNames(nsTArray<nsString>& aNames) override
+  {
+    AutoTArray<nsIAtom*, 8> atoms;
+    for (uint32_t i = 0; i < mElements.Length(); i++) {
+      MOZ_DIAGNOSTIC_ASSERT(mElements[i]);
+      Element* element = mElements[i]->AsElement();
+
+      nsIAtom* id = element->GetID();
+      MOZ_ASSERT(id != nsGkAtoms::_empty);
+      if (id && !atoms.Contains(id)) {
+        atoms.AppendElement(id);
+      }
+
+      if (element->HasName()) {
+        nsIAtom* name = element->GetParsedAttr(nsGkAtoms::name)->GetAtomValue();
+        MOZ_ASSERT(name && name != nsGkAtoms::_empty);
+        if (name && !atoms.Contains(name)) {
+          atoms.AppendElement(name);
+        }
+      }
+    }
+
+    nsString* names = aNames.AppendElements(atoms.Length());
+    for (uint32_t i = 0; i < atoms.Length(); i++) {
+      atoms[i]->ToString(names[i]);
+    }
+  }
+
+  virtual JSObject* GetWrapperPreserveColorInternal() override
+  {
+    return nsWrapperCache::GetWrapperPreserveColor();
+  }
+  virtual void PreserveWrapperInternal(nsISupports* aScriptObjectHolder) override
+  {
+    nsWrapperCache::PreserveWrapper(aScriptObjectHolder);
+  }
+  virtual JSObject* WrapObject(JSContext *aCx,
+                               JS::Handle<JSObject*> aGivenProto) override
+  {
+    return HTMLCollectionBinding::Wrap(aCx, this, aGivenProto);
+  }
+
+  using nsBaseContentList::Length;
+  using nsBaseContentList::Item;
+  using nsIHTMLCollection::NamedItem;
+
+private:
+  virtual ~SimpleHTMLCollection() {}
+};
+
+NS_IMPL_ISUPPORTS_INHERITED(SimpleHTMLCollection, nsSimpleContentList,
+                            nsIHTMLCollection, nsIDOMHTMLCollection)
+
+NS_IMETHODIMP
+SimpleHTMLCollection::GetLength(uint32_t* aLength)
+{
+  *aLength = Length();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SimpleHTMLCollection::Item(uint32_t aIdx, nsIDOMNode** aRetVal)
+{
+  nsCOMPtr<nsIDOMNode> retVal = Item(aIdx)->AsDOMNode();
+  retVal.forget(aRetVal);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SimpleHTMLCollection::NamedItem(const nsAString& aName, nsIDOMNode** aRetVal)
+{
+  nsCOMPtr<nsIDOMNode> retVal = NamedItem(aName)->AsDOMNode();
+  retVal.forget(aRetVal);
+  return NS_OK;
+}
+
+} // namespace dom
+} // namespace mozilla
+
 void
 nsIdentifierMapEntry::AddNameElement(nsINode* aNode, Element* aElement)
 {
   if (!mNameContentList) {
-    mNameContentList = new nsSimpleContentList(aNode);
+    mNameContentList = new SimpleHTMLCollection(aNode);
   }
 
   mNameContentList->AppendElement(aElement);
@@ -1009,12 +1127,12 @@ nsExternalResourceMap::PendingLoad::SetupViewer(nsIRequest* aRequest,
   nsCOMPtr<nsICategoryManager> catMan =
     do_GetService(NS_CATEGORYMANAGER_CONTRACTID);
   NS_ENSURE_TRUE(catMan, NS_ERROR_NOT_AVAILABLE);
-  nsXPIDLCString contractId;
+  nsCString contractId;
   nsresult rv = catMan->GetCategoryEntry("Gecko-Content-Viewers", type.get(),
                                          getter_Copies(contractId));
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIDocumentLoaderFactory> docLoaderFactory =
-    do_GetService(contractId);
+    do_GetService(contractId.get());
   NS_ENSURE_TRUE(docLoaderFactory, NS_ERROR_NOT_AVAILABLE);
 
   nsCOMPtr<nsIContentViewer> viewer;
@@ -1353,6 +1471,8 @@ nsIDocument::nsIDocument()
     mIsTopLevelContentDocument(false),
     mIsContentDocument(false),
     mMightHaveStaleServoData(false),
+    mDidCallBeginLoad(false),
+    mBufferingCSPViolations(false),
     mIsScopedStyleEnabled(eScopedStyle_Unknown),
     mCompatMode(eCompatibility_FullStandards),
     mReadyState(ReadyState::READYSTATE_UNINITIALIZED),
@@ -1386,7 +1506,8 @@ nsIDocument::nsIDocument()
     mChildDocumentUseCounters(0),
     mNotifiedPageForUseCounter(0),
     mIncCounters(),
-    mUserHasInteracted(false)
+    mUserHasInteracted(false),
+    mServoRestyleRootDirtyBits(0)
 {
   SetIsInDocument();
   for (auto& cnt : mIncCounters) {
@@ -1440,6 +1561,9 @@ nsDocument::nsDocument(const char* aContentType)
 #ifdef DEBUG
   , mWillReparent(false)
 #endif
+  , mDOMLoadingSet(false)
+  , mDOMInteractiveSet(false)
+  , mDOMCompleteSet(false)
 {
   SetContentTypeInternal(nsDependentCString(aContentType));
 
@@ -3924,6 +4048,9 @@ nsDocument::CreateShell(nsPresContext* aContext, nsViewManager* aViewManager,
   if (docShell && docShell->IsInvisible())
     shell->SetNeverPainting(true);
 
+  MOZ_LOG(gDocumentLeakPRLog, LogLevel::Debug, ("DOCUMENT %p with PressShell %p and DocShell %p",
+                                                this, shell.get(), docShell.get()));
+
   mExternalResourceMap.ShowViewers();
 
   UpdateFrameRequestCallbackSchedulingState();
@@ -5161,6 +5288,9 @@ nsDocument::EndUpdate(nsUpdateType aUpdateType)
 void
 nsDocument::BeginLoad()
 {
+  MOZ_ASSERT(!mDidCallBeginLoad);
+  mDidCallBeginLoad = true;
+
   // Block onload here to prevent having to deal with blocking and
   // unblocking it while we know the document is loading.
   BlockOnload();
@@ -5419,6 +5549,17 @@ nsDocument::DispatchContentLoadedEvents()
 void
 nsDocument::EndLoad()
 {
+  // EndLoad may have been called without a matching call to BeginLoad, in the
+  // case of a failed parse (for example, due to timeout). In such a case, we
+  // still want to execute part of this code to do appropriate cleanup, but we
+  // gate part of it because it is intended to match 1-for-1 with calls to
+  // BeginLoad. We have an explicit flag bit for this purpose, since it's
+  // complicated and error prone to derive this condition from other related
+  // flags that can be manipulated outside of a BeginLoad/EndLoad pair.
+
+  // Part 1: Code that always executes to cleanup end of parsing, whether
+  // that parsing was successful or not.
+
   // Drop the ref to our parser, if any, but keep hold of the sink so that we
   // can flush it from FlushPendingNotifications as needed.  We might have to
   // do that to get a StartLayout() to happen.
@@ -5428,6 +5569,13 @@ nsDocument::EndLoad()
   }
 
   NS_DOCUMENT_NOTIFY_OBSERVERS(EndLoad, (this));
+
+  // Part 2: Code that only executes when this EndLoad matches a BeginLoad.
+
+  if (!mDidCallBeginLoad) {
+    return;
+  }
+  mDidCallBeginLoad = false;
 
   UnblockDOMContentLoaded();
 }
@@ -5439,6 +5587,9 @@ nsDocument::UnblockDOMContentLoaded()
   if (--mBlockDOMContentLoaded != 0 || mDidFireDOMContentLoaded) {
     return;
   }
+
+  MOZ_LOG(gDocumentLeakPRLog, LogLevel::Debug, ("DOCUMENT %p UnblockDOMContentLoaded", this));
+
   mDidFireDOMContentLoaded = true;
 
   MOZ_ASSERT(mReadyState == READYSTATE_INTERACTIVE);
@@ -5882,6 +6033,13 @@ nsDocument::CreateTextNode(const nsAString& aData, nsIDOMText** aReturn)
 }
 
 already_AddRefed<nsTextNode>
+nsIDocument::CreateEmptyTextNode() const
+{
+  RefPtr<nsTextNode> text = new nsTextNode(mNodeInfoManager);
+  return text.forget();
+}
+
+already_AddRefed<nsTextNode>
 nsIDocument::CreateTextNode(const nsAString& aData) const
 {
   RefPtr<nsTextNode> text = new nsTextNode(mNodeInfoManager);
@@ -6098,19 +6256,63 @@ nsDocument::CustomElementConstructor(JSContext* aCx, unsigned aArgc, JS::Value* 
     return true;
   }
 
-  nsDependentAtomString localName(definition->mLocalName);
+  RefPtr<Element> element;
 
-  nsCOMPtr<Element> element =
-    document->CreateElem(localName, nullptr, kNameSpaceID_XHTML);
-  NS_ENSURE_TRUE(element, true);
+  // We integrate with construction stack and do prototype swizzling here, so
+  // that old upgrade behavior could also share the new upgrade steps.
+  // And this old upgrade will be remove at some point (when everything is
+  // switched to latest custom element spec).
+  nsTArray<RefPtr<nsGenericHTMLElement>>& constructionStack =
+    definition->mConstructionStack;
+  if (constructionStack.Length()) {
+    element = constructionStack.LastElement();
+    NS_ENSURE_TRUE(element != ALEADY_CONSTRUCTED_MARKER, false);
 
-  if (definition->mLocalName != typeAtom) {
-    // This element is a custom element by extension, thus we need to
-    // do some special setup. For non-extended custom elements, this happens
-    // when the element is created.
-    nsContentUtils::SetupCustomElement(element, &elemName);
+    // Do prototype swizzling if dom reflector exists.
+    JS::Rooted<JSObject*> reflector(aCx, element->GetWrapper());
+    if (reflector) {
+      Maybe<JSAutoCompartment> ac;
+      JS::Rooted<JSObject*> prototype(aCx, definition->mPrototype);
+      if (element->NodePrincipal()->SubsumesConsideringDomain(nsContentUtils::ObjectPrincipal(prototype))) {
+        ac.emplace(aCx, reflector);
+        if (!JS_WrapObject(aCx, &prototype) ||
+            !JS_SetPrototype(aCx, reflector, prototype)) {
+          return false;
+        }
+      } else {
+        // We want to set the custom prototype in the compartment where it was
+        // registered. We store the prototype from define() without unwrapped,
+        // hence the prototype's compartment is the compartment where it was
+        // registered.
+        // In the case that |reflector| and |prototype| are in different
+        // compartments, this will set the prototype on the |reflector|'s wrapper
+        // and thus only visible in the wrapper's compartment, since we know
+        // reflector's principal does not subsume prototype's in this case.
+        ac.emplace(aCx, prototype);
+        if (!JS_WrapObject(aCx, &reflector) ||
+            !JS_SetPrototype(aCx, reflector, prototype)) {
+          return false;
+        }
+      }
+
+      // Wrap into current context.
+      if (!JS_WrapObject(aCx, &reflector)) {
+        return false;
+      }
+
+      args.rval().setObject(*reflector);
+      return true;
+    }
+  } else {
+    nsDependentAtomString localName(definition->mLocalName);
+    element =
+      document->CreateElem(localName, nullptr, kNameSpaceID_XHTML,
+                           (definition->mLocalName != typeAtom) ? &elemName
+                                                                : nullptr);
+    NS_ENSURE_TRUE(element, false);
   }
 
+  // The prototype setup happens in Element::WrapObject().
   nsresult rv = nsContentUtils::WrapNative(aCx, element, element, args.rval());
   NS_ENSURE_SUCCESS(rv, true);
 
@@ -8680,15 +8882,8 @@ nsDocument::CanSavePresentation(nsIRequest *aNewRequest)
 
 #ifdef MOZ_WEBRTC
   // Check if we have active PeerConnections
-  nsCOMPtr<IPeerConnectionManager> pcManager =
-    do_GetService(IPEERCONNECTION_MANAGER_CONTRACTID);
-
-  if (pcManager && win) {
-    bool active;
-    pcManager->HasActivePeerConnection(win->WindowID(), &active);
-    if (active) {
-      return false;
-    }
+  if (win && win->HasActivePeerConnections()) {
+    return false;
   }
 #endif // MOZ_WEBRTC
 
@@ -8750,6 +8945,7 @@ nsDocument::Destroy()
 
   mIsGoingAway = true;
 
+  ScriptLoader()->Destroy();
   SetScriptGlobalObject(nullptr);
   RemovedFromDocShell();
 
@@ -9451,6 +9647,8 @@ nsDocument::SetReadyStateInternal(ReadyState rs)
     mLoadingTimeStamp = mozilla::TimeStamp::Now();
   }
 
+  RecordNavigationTiming(rs);
+
   RefPtr<AsyncEventDispatcher> asyncDispatcher =
     new AsyncEventDispatcher(this, NS_LITERAL_STRING("readystatechange"),
                              false, false);
@@ -9572,19 +9770,23 @@ already_AddRefed<nsIURI>
 nsDocument::ResolvePreloadImage(nsIURI *aBaseURI,
                                 const nsAString& aSrcAttr,
                                 const nsAString& aSrcsetAttr,
-                                const nsAString& aSizesAttr)
+                                const nsAString& aSizesAttr,
+                                bool *aIsImgSet)
 {
   nsString sourceURL;
+  bool isImgSet;
   if (mPreloadPictureDepth == 1 && !mPreloadPictureFoundSource.IsVoid()) {
     // We're in a <picture> element and found a URI from a source previous to
     // this image, use it.
     sourceURL = mPreloadPictureFoundSource;
+    isImgSet = true;
   } else {
     // Otherwise try to use this <img> as a source
     HTMLImageElement::SelectSourceForTagWithAttrs(this, false, aSrcAttr,
                                                   aSrcsetAttr, aSizesAttr,
                                                   NullString(), NullString(),
                                                   sourceURL);
+    isImgSet = !aSrcsetAttr.IsEmpty();
   }
 
   // Empty sources are not loaded by <img> (i.e. not resolved to the baseURI)
@@ -9602,6 +9804,8 @@ nsDocument::ResolvePreloadImage(nsIURI *aBaseURI,
     return nullptr;
   }
 
+  *aIsImgSet = isImgSet;
+
   // We don't clear mPreloadPictureFoundSource because subsequent <img> tags in
   // this this <picture> share the same <sources> (though this is not valid per
   // spec)
@@ -9610,16 +9814,12 @@ nsDocument::ResolvePreloadImage(nsIURI *aBaseURI,
 
 void
 nsDocument::MaybePreLoadImage(nsIURI* uri, const nsAString &aCrossOriginAttr,
-                              ReferrerPolicy aReferrerPolicy)
+                              ReferrerPolicy aReferrerPolicy, bool aIsImgSet)
 {
   // Early exit if the img is already present in the img-cache
   // which indicates that the "real" load has already started and
   // that we shouldn't preload it.
-  int16_t blockingStatus;
-  if (nsContentUtils::IsImageInCache(uri, static_cast<nsIDocument *>(this)) ||
-      !nsContentUtils::CanLoadImage(uri, static_cast<nsIDocument *>(this),
-                                    this, NodePrincipal(), &blockingStatus,
-                                    nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD)) {
+  if (nsContentUtils::IsImageInCache(uri, static_cast<nsIDocument *>(this))) {
     return;
   }
 
@@ -9638,6 +9838,10 @@ nsDocument::MaybePreLoadImage(nsIURI* uri, const nsAString &aCrossOriginAttr,
     MOZ_CRASH("Unknown CORS mode!");
   }
 
+  nsContentPolicyType policyType =
+    aIsImgSet ? nsIContentPolicy::TYPE_IMAGESET :
+                nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD;
+
   // Image not in cache - trigger preload
   RefPtr<imgRequestProxy> request;
   nsresult rv =
@@ -9651,7 +9855,7 @@ nsDocument::MaybePreLoadImage(nsIURI* uri, const nsAString &aCrossOriginAttr,
                               loadFlags,
                               NS_LITERAL_STRING("img"),
                               getter_AddRefs(request),
-                              nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD);
+                              policyType);
 
   // Pin image-reference to avoid evicting it from the img-cache before
   // the "real" load occurs. Unpinned in DispatchContentLoadedEvents and
@@ -9871,7 +10075,8 @@ nsDocument::GetTemplateContentsOwner()
                                     NodePrincipal(),
                                     true, // aLoadedAsData
                                     scriptObject, // aEventObject
-                                    DocumentFlavorHTML);
+                                    DocumentFlavorHTML,
+                                    mStyleBackendType);
     NS_ENSURE_SUCCESS(rv, nullptr);
 
     mTemplateContentsOwner = do_QueryInterface(domDocument);
@@ -12367,32 +12572,24 @@ nsDocument::GetVisibilityState(nsAString& aState)
 }
 
 /* virtual */ void
-nsIDocument::DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
+nsIDocument::DocAddSizeOfExcludingThis(nsWindowSizes& aSizes) const
 {
-  aWindowSizes->mDOMOtherSize +=
-    nsINode::SizeOfExcludingThis(aWindowSizes->mState);
+  nsINode::AddSizeOfExcludingThis(aSizes, &aSizes.mDOMOtherSize);
 
   if (mPresShell) {
-    mPresShell->AddSizeOfIncludingThis(aWindowSizes->mState.mMallocSizeOf,
-                                       &aWindowSizes->mArenaStats,
-                                       &aWindowSizes->mLayoutPresShellSize,
-                                       &aWindowSizes->mLayoutStyleSetsSize,
-                                       &aWindowSizes->mLayoutTextRunsSize,
-                                       &aWindowSizes->mLayoutPresContextSize,
-                                       &aWindowSizes->mLayoutFramePropertiesSize);
+    mPresShell->AddSizeOfIncludingThis(aSizes);
   }
 
-  aWindowSizes->mPropertyTablesSize +=
-    mPropertyTable.SizeOfExcludingThis(aWindowSizes->mState.mMallocSizeOf);
+  aSizes.mPropertyTablesSize +=
+    mPropertyTable.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
   for (uint32_t i = 0, count = mExtraPropertyTables.Length();
        i < count; ++i) {
-    aWindowSizes->mPropertyTablesSize +=
-      mExtraPropertyTables[i]->SizeOfIncludingThis(
-        aWindowSizes->mState.mMallocSizeOf);
+    aSizes.mPropertyTablesSize +=
+      mExtraPropertyTables[i]->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
   }
 
   if (EventListenerManager* elm = GetExistingListenerManager()) {
-    aWindowSizes->mDOMEventListenersCount += elm->ListenerCount();
+    aSizes.mDOMEventListenersCount += elm->ListenerCount();
   }
 
   // Measurement of the following members may be added later if DMD finds it
@@ -12401,9 +12598,9 @@ nsIDocument::DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
 }
 
 void
-nsIDocument::DocAddSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const
+nsIDocument::DocAddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const
 {
-  aWindowSizes->mDOMOtherSize += aWindowSizes->mState.mMallocSizeOf(this);
+  aWindowSizes.mDOMOtherSize += aWindowSizes.mState.mMallocSizeOf(this);
   DocAddSizeOfExcludingThis(aWindowSizes);
 }
 
@@ -12423,83 +12620,107 @@ SizeOfOwnedSheetArrayExcludingThis(const nsTArray<RefPtr<StyleSheet>>& aSheets,
   return n;
 }
 
-size_t
-nsDocument::SizeOfExcludingThis(SizeOfState& aState) const
+void
+nsDocument::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                   size_t* aNodeSize) const
 {
-  // This SizeOfExcludingThis() overrides the one from nsINode.  But
+  // This AddSizeOfExcludingThis() overrides the one from nsINode.  But
   // nsDocuments can only appear at the top of the DOM tree, and we use the
   // specialized DocAddSizeOfExcludingThis() in that case.  So this should never
   // be called.
   MOZ_CRASH();
 }
 
-void
-nsDocument::DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
+static void
+AddSizeOfNodeTree(nsIContent* aNode, nsWindowSizes& aWindowSizes)
 {
-  nsIDocument::DocAddSizeOfExcludingThis(aWindowSizes);
+  size_t nodeSize = 0;
+  aNode->AddSizeOfIncludingThis(aWindowSizes, &nodeSize);
 
-  for (nsIContent* node = nsINode::GetFirstChild();
-       node;
-       node = node->GetNextNode(this))
-  {
-    size_t nodeSize = node->SizeOfIncludingThis(aWindowSizes->mState);
-    size_t* p;
-
-    switch (node->NodeType()) {
-    case nsIDOMNode::ELEMENT_NODE:
-      p = &aWindowSizes->mDOMElementNodesSize;
-      break;
-    case nsIDOMNode::TEXT_NODE:
-      p = &aWindowSizes->mDOMTextNodesSize;
-      break;
-    case nsIDOMNode::CDATA_SECTION_NODE:
-      p = &aWindowSizes->mDOMCDATANodesSize;
-      break;
-    case nsIDOMNode::COMMENT_NODE:
-      p = &aWindowSizes->mDOMCommentNodesSize;
-      break;
-    default:
-      p = &aWindowSizes->mDOMOtherSize;
-      break;
-    }
-
-    *p += nodeSize;
-
-    if (EventListenerManager* elm = node->GetExistingListenerManager()) {
-      aWindowSizes->mDOMEventListenersCount += elm->ListenerCount();
-    }
+  // This is where we transfer the nodeSize obtained from
+  // nsINode::AddSizeOfIncludingThis() to a value in nsWindowSizes.
+  switch (aNode->NodeType()) {
+  case nsIDOMNode::ELEMENT_NODE:
+    aWindowSizes.mDOMElementNodesSize += nodeSize;
+    break;
+  case nsIDOMNode::TEXT_NODE:
+    aWindowSizes.mDOMTextNodesSize += nodeSize;
+    break;
+  case nsIDOMNode::CDATA_SECTION_NODE:
+    aWindowSizes.mDOMCDATANodesSize += nodeSize;
+    break;
+  case nsIDOMNode::COMMENT_NODE:
+    aWindowSizes.mDOMCommentNodesSize += nodeSize;
+    break;
+  default:
+    aWindowSizes.mDOMOtherSize += nodeSize;
+    break;
   }
 
-  aWindowSizes->mStyleSheetsSize +=
+  if (EventListenerManager* elm = aNode->GetExistingListenerManager()) {
+    aWindowSizes.mDOMEventListenersCount += elm->ListenerCount();
+  }
+
+  AllChildrenIterator iter(aNode, nsIContent::eAllChildren);
+  for (nsIContent* n = iter.GetNextChild(); n; n = iter.GetNextChild()) {
+    AddSizeOfNodeTree(n, aWindowSizes);
+  }
+}
+
+void
+nsDocument::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const
+{
+  // We use AllChildrenIterator to iterate over DOM nodes in
+  // AddSizeOfNodeTree(). The obvious place to start is at the document's root
+  // element, using GetRootElement(). However, that will miss comment nodes
+  // that are siblings of the root element. Instead we use
+  // GetFirstChild()/GetNextSibling() to traverse the document's immediate
+  // child nodes, calling AddSizeOfNodeTree() on each to measure them and then
+  // all their descendants. (The comment nodes won't have any descendants).
+  for (nsIContent* node = nsINode::GetFirstChild();
+       node;
+       node = node->GetNextSibling()) {
+    AddSizeOfNodeTree(node, aWindowSizes);
+  }
+
+  // IMPORTANT: for our ComputedValues measurements, we want to measure
+  // ComputedValues accessible from DOM elements before ComputedValues not
+  // accessible from DOM elements (i.e. accessible only from the frame tree).
+  //
+  // Therefore, the measurement of the nsIDocument superclass must happen after
+  // the measurement of DOM nodes (above), because nsIDocument contains the
+  // PresShell, which contains the frame tree.
+  nsIDocument::DocAddSizeOfExcludingThis(aWindowSizes);
+
+  aWindowSizes.mStyleSheetsSize +=
     SizeOfOwnedSheetArrayExcludingThis(mStyleSheets,
-                                       aWindowSizes->mState.mMallocSizeOf);
+                                       aWindowSizes.mState.mMallocSizeOf);
   // Note that we do not own the sheets pointed to by mOnDemandBuiltInUASheets
   // (the nsLayoutStyleSheetCache singleton does).
-  aWindowSizes->mStyleSheetsSize +=
+  aWindowSizes.mStyleSheetsSize +=
     mOnDemandBuiltInUASheets.ShallowSizeOfExcludingThis(
-      aWindowSizes->mState.mMallocSizeOf);
+      aWindowSizes.mState.mMallocSizeOf);
   for (auto& sheetArray : mAdditionalSheets) {
-    aWindowSizes->mStyleSheetsSize +=
+    aWindowSizes.mStyleSheetsSize +=
       SizeOfOwnedSheetArrayExcludingThis(sheetArray,
-                                         aWindowSizes->mState.mMallocSizeOf);
+                                         aWindowSizes.mState.mMallocSizeOf);
   }
   // Lumping in the loader with the style-sheets size is not ideal,
   // but most of the things in there are in fact stylesheets, so it
   // doesn't seem worthwhile to separate it out.
-  aWindowSizes->mStyleSheetsSize +=
-    CSSLoader()->SizeOfIncludingThis(aWindowSizes->mState.mMallocSizeOf);
+  aWindowSizes.mStyleSheetsSize +=
+    CSSLoader()->SizeOfIncludingThis(aWindowSizes.mState.mMallocSizeOf);
 
-  aWindowSizes->mDOMOtherSize += mAttrStyleSheet
-                               ? mAttrStyleSheet->DOMSizeOfIncludingThis(
-                                   aWindowSizes->mState.mMallocSizeOf)
-                               : 0;
+  aWindowSizes.mDOMOtherSize += mAttrStyleSheet
+                              ? mAttrStyleSheet->DOMSizeOfIncludingThis(
+                                  aWindowSizes.mState.mMallocSizeOf)
+                              : 0;
 
-  aWindowSizes->mDOMOtherSize +=
-    mStyledLinks.ShallowSizeOfExcludingThis(
-      aWindowSizes->mState.mMallocSizeOf);
+  aWindowSizes.mDOMOtherSize +=
+    mStyledLinks.ShallowSizeOfExcludingThis(aWindowSizes.mState.mMallocSizeOf);
 
-  aWindowSizes->mDOMOtherSize +=
-    mIdentifierMap.SizeOfExcludingThis(aWindowSizes->mState.mMallocSizeOf);
+  aWindowSizes.mDOMOtherSize +=
+    mIdentifierMap.SizeOfExcludingThis(aWindowSizes.mState.mMallocSizeOf);
 
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
@@ -12514,6 +12735,12 @@ nsIDocument::Constructor(const GlobalObject& aGlobal,
   if (!global) {
     rv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
+  }
+
+  auto styleBackend = StyleBackendType::None;
+  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
+  if (window && window->GetExtantDoc()) {
+    styleBackend = window->GetExtantDoc()->GetStyleBackendType();
   }
 
   nsCOMPtr<nsIScriptObjectPrincipal> prin = do_QueryInterface(aGlobal.GetAsSupports());
@@ -12540,7 +12767,8 @@ nsIDocument::Constructor(const GlobalObject& aGlobal,
                       prin->GetPrincipal(),
                       true,
                       global,
-                      DocumentFlavorPlain);
+                      DocumentFlavorPlain,
+                      styleBackend);
   if (NS_FAILED(res)) {
     rv.Throw(res);
     return nullptr;
@@ -13219,10 +13447,12 @@ nsIDocument::UpdateStyleBackendType()
 
 #ifdef MOZ_STYLO
   if (nsLayoutUtils::StyloEnabled()) {
-    if (!mDocumentContainer) {
+    if (IsBeingUsedAsImage()) {
+      // Enable stylo for SVG-as-image.
+      mStyleBackendType = StyleBackendType::Servo;
+    } else if (!mDocumentContainer) {
       NS_WARNING("stylo: No docshell yet, assuming Gecko style system");
-    } else if ((IsHTMLOrXHTML() || IsSVGDocument()) &&
-               IsContentDocument()) {
+    } else if (!IsXULDocument() && IsContentDocument()) {
       // Disable stylo for about: pages other than about:blank, since
       // they tend to use unsupported selectors like XUL tree pseudos.
       bool isAbout = false;
@@ -13580,4 +13810,70 @@ nsIDocument::ClearStaleServoDataFromDocument()
     ServoRestyleManager::ClearServoDataFromSubtree(root);
   }
   mMightHaveStaleServoData = false;
+}
+
+Selection*
+nsIDocument::GetSelection(ErrorResult& aRv)
+{
+  nsCOMPtr<nsPIDOMWindowInner> window = GetInnerWindow();
+  if (!window) {
+    return nullptr;
+  }
+
+  NS_ASSERTION(window->IsInnerWindow(), "Should have inner window here!");
+  if (!window->IsCurrentInnerWindow()) {
+    return nullptr;
+  }
+
+  return nsGlobalWindow::Cast(window)->GetSelection(aRv);
+}
+
+void
+nsDocument::RecordNavigationTiming(ReadyState aReadyState)
+{
+  if (!XRE_IsContentProcess()) {
+    return;
+  }
+  if (!IsTopLevelContentDocument()) {
+    return;
+  }
+  // If we dont have the timing yet (mostly because the doc is still loading),
+  // get it from docshell.
+  RefPtr<nsDOMNavigationTiming> timing = mTiming;
+  if (!timing) {
+    if (!mDocumentContainer) {
+      return;
+    }
+    timing = mDocumentContainer->GetNavigationTiming();
+    if (!timing) {
+      return;
+    }
+  }
+  TimeStamp startTime = timing->GetNavigationStartTimeStamp();
+  switch (aReadyState) {
+    case READYSTATE_LOADING:
+      if (!mDOMLoadingSet) {
+        Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_LOADING_MS,
+                                       startTime);
+        mDOMLoadingSet = true;
+      }
+      break;
+    case READYSTATE_INTERACTIVE:
+      if (!mDOMInteractiveSet) {
+        Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_INTERACTIVE_MS,
+                                       startTime);
+        mDOMInteractiveSet = true;
+      }
+      break;
+    case READYSTATE_COMPLETE:
+      if (!mDOMCompleteSet) {
+        Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_COMPLETE_MS,
+                                       startTime);
+        mDOMCompleteSet = true;
+      }
+      break;
+    default:
+      NS_WARNING("Unexpected ReadyState value");
+      break;
+  }
 }

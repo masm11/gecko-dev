@@ -11,7 +11,7 @@
 #include "mozilla/dom/HTMLAllCollection.h"
 #include "nsCOMPtr.h"
 #include "nsGlobalWindow.h"
-#include "nsXPIDLString.h"
+#include "nsString.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
@@ -57,7 +57,6 @@
 #include "nsIComponentManager.h"
 #include "nsParserCIID.h"
 #include "nsIDOMHTMLElement.h"
-#include "nsIDOMHTMLHeadElement.h"
 #include "nsNameSpaceManager.h"
 #include "nsGenericHTMLElement.h"
 #include "mozilla/css/Loader.h"
@@ -84,12 +83,11 @@
 
 #include "mozilla/dom/FallbackEncoding.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/HTMLEditor.h"
 #include "mozilla/LoadInfo.h"
 #include "nsIEditingSession.h"
-#include "nsIEditor.h"
 #include "nsNodeInfoManager.h"
 #include "nsIPlaintextEditor.h"
-#include "nsIHTMLEditor.h"
 #include "nsIEditorStyleSheets.h"
 #include "nsIInlineSpellChecker.h"
 #include "nsRange.h"
@@ -1151,7 +1149,7 @@ nsHTMLDocument::SetBody(nsGenericHTMLElement* newBody, ErrorResult& rv)
 }
 
 NS_IMETHODIMP
-nsHTMLDocument::GetHead(nsIDOMHTMLHeadElement** aHead)
+nsHTMLDocument::GetHead(nsISupports** aHead)
 {
   *aHead = nullptr;
 
@@ -1372,7 +1370,7 @@ nsHTMLDocument::GetCookie(nsAString& aCookie, ErrorResult& rv)
       }
     }
 
-    nsXPIDLCString cookie;
+    nsCString cookie;
     service->GetCookieString(codebaseURI, channel, getter_Copies(cookie));
     // CopyUTF8toUTF16 doesn't handle error
     // because it assumes that the input is valid.
@@ -2229,24 +2227,8 @@ NS_IMETHODIMP
 nsHTMLDocument::GetSelection(nsISelection** aReturn)
 {
   ErrorResult rv;
-  NS_IF_ADDREF(*aReturn = GetSelection(rv));
+  NS_IF_ADDREF(*aReturn = nsDocument::GetSelection(rv));
   return rv.StealNSResult();
-}
-
-Selection*
-nsHTMLDocument::GetSelection(ErrorResult& aRv)
-{
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(GetScopeObject());
-  if (!window) {
-    return nullptr;
-  }
-
-  NS_ASSERTION(window->IsInnerWindow(), "Should have inner window here!");
-  if (!window->IsCurrentInnerWindow()) {
-    return nullptr;
-  }
-
-  return nsGlobalWindow::Cast(window)->GetSelection(aRv);
 }
 
 NS_IMETHODIMP
@@ -2613,9 +2595,8 @@ nsHTMLDocument::DeferredContentEditableCountChange(nsIContent *aElement)
       if (!docshell)
         return;
 
-      nsCOMPtr<nsIEditor> editor;
-      docshell->GetEditor(getter_AddRefs(editor));
-      if (editor) {
+      RefPtr<HTMLEditor> htmlEditor = docshell->GetHTMLEditor();
+      if (htmlEditor) {
         RefPtr<nsRange> range = new nsRange(aElement);
         rv = range->SelectNode(node);
         if (NS_FAILED(rv)) {
@@ -2626,8 +2607,8 @@ nsHTMLDocument::DeferredContentEditableCountChange(nsIContent *aElement)
         }
 
         nsCOMPtr<nsIInlineSpellChecker> spellChecker;
-        rv = editor->GetInlineSpellChecker(false,
-                                           getter_AddRefs(spellChecker));
+        rv = htmlEditor->GetInlineSpellChecker(false,
+                                               getter_AddRefs(spellChecker));
         NS_ENSURE_SUCCESS_VOID(rv);
 
         if (spellChecker) {
@@ -2661,7 +2642,7 @@ NotifyEditableStateChange(nsINode *aNode, nsIDocument *aDocument)
 }
 
 void
-nsHTMLDocument::TearingDownEditor(nsIEditor *aEditor)
+nsHTMLDocument::TearingDownEditor()
 {
   if (IsEditingOn()) {
     EditingState oldState = mEditingState;
@@ -2774,17 +2755,12 @@ nsHTMLDocument::EditingStateChanged()
   nsresult rv = docshell->GetEditingSession(getter_AddRefs(editSession));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIEditor> existingEditor;
-  editSession->GetEditorForWindow(window, getter_AddRefs(existingEditor));
-  if (existingEditor) {
+  RefPtr<HTMLEditor> htmlEditor = editSession->GetHTMLEditorForWindow(window);
+  if (htmlEditor) {
     // We might already have an editor if it was set up for mail, let's see
     // if this is actually the case.
-#ifdef DEBUG
-    nsCOMPtr<nsIHTMLEditor> htmlEditor = do_QueryInterface(existingEditor);
-    MOZ_ASSERT(htmlEditor, "If we have an editor, it must be an HTML editor");
-#endif
     uint32_t flags = 0;
-    existingEditor->GetFlags(&flags);
+    htmlEditor->GetFlags(&flags);
     if (flags & nsIPlaintextEditor::eEditorMailMask) {
       // We already have a mail editor, then we should not attempt to create
       // another one.
@@ -2802,7 +2778,7 @@ nsHTMLDocument::EditingStateChanged()
   bool updateState = false;
   bool spellRecheckAll = false;
   bool putOffToRemoveScriptBlockerUntilModifyingEditingState = false;
-  nsCOMPtr<nsIEditor> editor;
+  htmlEditor = nullptr;
 
   {
     EditingState oldState = mEditingState;
@@ -2886,14 +2862,15 @@ nsHTMLDocument::EditingStateChanged()
     }
 
     // XXX Need to call TearDownEditorOnWindow for all failures.
-    docshell->GetEditor(getter_AddRefs(editor));
-    if (!editor)
+    htmlEditor = docshell->GetHTMLEditor();
+    if (!htmlEditor) {
       return NS_ERROR_FAILURE;
+    }
 
     // If we're entering the design mode, put the selection at the beginning of
     // the document for compatibility reasons.
     if (designMode && oldState == eOff) {
-      editor->BeginningOfDocument();
+      htmlEditor->BeginningOfDocument();
     }
 
     if (putOffToRemoveScriptBlockerUntilModifyingEditingState) {
@@ -2945,18 +2922,21 @@ nsHTMLDocument::EditingStateChanged()
 
   // Resync the editor's spellcheck state.
   if (spellRecheckAll) {
-    nsCOMPtr<nsISelectionController> selcon;
-    nsresult rv = editor->GetSelectionController(getter_AddRefs(selcon));
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsISelectionController> selectionController =
+      htmlEditor->GetSelectionController();
+    if (NS_WARN_IF(!selectionController)) {
+      return NS_ERROR_FAILURE;
+    }
 
     nsCOMPtr<nsISelection> spellCheckSelection;
-    rv = selcon->GetSelection(nsISelectionController::SELECTION_SPELLCHECK,
-                              getter_AddRefs(spellCheckSelection));
+    rv = selectionController->GetSelection(
+                                nsISelectionController::SELECTION_SPELLCHECK,
+                                getter_AddRefs(spellCheckSelection));
     if (NS_SUCCEEDED(rv)) {
       spellCheckSelection->RemoveAllRanges();
     }
   }
-  editor->SyncRealTimeSpell();
+  htmlEditor->SyncRealTimeSpell();
 
   return NS_OK;
 }
@@ -3687,7 +3667,7 @@ nsHTMLDocument::QueryCommandValue(const nsAString& commandID,
   // aValue will wind up being the empty string.  This is fine -- we want to
   // return "" in that case anyway (bug 738385), so we just return NS_OK
   // regardless.
-  nsXPIDLCString cStringResult;
+  nsCString cStringResult;
   cmdParams->GetCStringValue("state_attribute",
                              getter_Copies(cStringResult));
   CopyUTF8toUTF16(cStringResult, aValue);
@@ -3731,7 +3711,7 @@ nsHTMLDocument::RemovedFromDocShell()
 }
 
 /* virtual */ void
-nsHTMLDocument::DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
+nsHTMLDocument::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const
 {
   nsDocument::DocAddSizeOfExcludingThis(aWindowSizes);
 

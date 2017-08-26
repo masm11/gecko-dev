@@ -9,10 +9,10 @@
 use Atom;
 use cssparser::{AtRuleParser, DeclarationListParser, DeclarationParser};
 use cssparser::{Parser, Token, serialize_identifier, BasicParseError, CowRcStr};
-use error_reporting::ContextualParseError;
+use error_reporting::{ContextualParseError, ParseErrorReporter};
 #[cfg(feature = "gecko")] use gecko::rules::CounterStyleDescriptors;
 #[cfg(feature = "gecko")] use gecko_bindings::structs::nsCSSCounterDesc;
-use parser::{ParserContext, log_css_error, Parse};
+use parser::{ParserContext, ParserErrorContext, Parse};
 use selectors::parser::SelectorParseError;
 use shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
 use std::ascii::AsciiExt;
@@ -50,9 +50,14 @@ pub fn parse_counter_style_name<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Cu
 }
 
 /// Parse the body (inside `{}`) of an @counter-style rule
-pub fn parse_counter_style_body<'i, 't>(name: CustomIdent, context: &ParserContext, input: &mut Parser<'i, 't>)
-                                        -> Result<CounterStyleRuleData, ParseError<'i>> {
-    let start = input.position();
+pub fn parse_counter_style_body<'i, 't, R>(name: CustomIdent,
+                                           context: &ParserContext,
+                                           error_context: &ParserErrorContext<R>,
+                                           input: &mut Parser<'i, 't>)
+                                           -> Result<CounterStyleRuleData, ParseError<'i>>
+    where R: ParseErrorReporter
+{
+    let start = input.current_source_location();
     let mut rule = CounterStyleRuleData::empty(name);
     {
         let parser = CounterStyleRuleParser {
@@ -62,10 +67,8 @@ pub fn parse_counter_style_body<'i, 't>(name: CustomIdent, context: &ParserConte
         let mut iter = DeclarationListParser::new(input, parser);
         while let Some(declaration) = iter.next() {
             if let Err(err) = declaration {
-                let pos = err.span.start;
-                let error = ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(
-                    iter.input.slice(err.span), err.error);
-                log_css_error(iter.input, pos, error, context);
+                let error = ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(err.slice, err.error);
+                context.log_css_error(error_context, err.location, error)
             }
         }
     }
@@ -97,7 +100,7 @@ pub fn parse_counter_style_body<'i, 't>(name: CustomIdent, context: &ParserConte
         _ => None
     };
     if let Some(error) = error {
-        log_css_error(input, start, error, context);
+        context.log_css_error(error_context, start, error);
         Err(StyleParseError::UnspecifiedError.into())
     } else {
         Ok(rule)
@@ -272,7 +275,7 @@ counter_style_descriptors! {
 }
 
 /// https://drafts.csswg.org/css-counter-styles/#counter-style-system
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum System {
     /// 'cyclic'
     Cyclic,
@@ -337,7 +340,7 @@ impl ToCss for System {
 }
 
 /// https://drafts.csswg.org/css-counter-styles/#typedef-symbol
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Symbol {
     /// <string>
     String(String),
@@ -380,7 +383,7 @@ impl Symbol {
 }
 
 /// https://drafts.csswg.org/css-counter-styles/#counter-style-negative
-#[derive(Debug, Clone, ToCss)]
+#[derive(Clone, Debug, ToCss)]
 pub struct Negative(pub Symbol, pub Option<Symbol>);
 
 impl Parse for Negative {
@@ -395,7 +398,7 @@ impl Parse for Negative {
 /// https://drafts.csswg.org/css-counter-styles/#counter-style-range
 ///
 /// Empty Vec represents 'auto'
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Ranges(pub Vec<Range<Option<i32>>>);
 
 impl Parse for Ranges {
@@ -484,7 +487,7 @@ impl Parse for Fallback {
 }
 
 /// https://drafts.csswg.org/css-counter-styles/#descdef-counter-style-symbols
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Symbols(pub Vec<Symbol>);
 
 impl Parse for Symbols {

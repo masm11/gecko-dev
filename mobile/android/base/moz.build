@@ -16,6 +16,9 @@ with Files('*Manifest*'):
 with Files('adjust-sdk-sandbox.token'):
     BUG_COMPONENT = ('Firefox for Android', 'Build Config & IDE Support')
 
+with Files('pocket-api-sandbox.token'):
+    BUG_COMPONENT = ('Firefox for Android', 'Build Config & IDE Support')
+
 with Files('android-services.mozbuild'):
     BUG_COMPONENT = ('Android Background Services', 'Android Sync')
 
@@ -283,6 +286,7 @@ gujar.sources += [geckoview_source_dir + 'java/org/mozilla/gecko/' + x for x in 
     'util/IntentUtils.java',
     'util/IOUtils.java',
     'util/JSONUtils.java',
+    'util/MapUtils.java',
     'util/MenuUtils.java',
     'util/NetworkUtils.java',
     'util/NonEvictingLruCache.java',
@@ -509,14 +513,19 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'activitystream/homepanel/menu/BottomSheetContextMenu.java',
     'activitystream/homepanel/menu/PopupContextMenu.java',
     'activitystream/homepanel/model/Highlight.java',
-    'activitystream/homepanel/model/Item.java',
     'activitystream/homepanel/model/Metadata.java',
+    'activitystream/homepanel/model/RowModel.java',
     'activitystream/homepanel/model/TopSite.java',
-    'activitystream/homepanel/stream/HighlightItem.java',
-    'activitystream/homepanel/stream/HighlightsTitle.java',
-    'activitystream/homepanel/stream/StreamItem.java',
-    'activitystream/homepanel/stream/TopPanel.java',
-    'activitystream/homepanel/stream/WelcomePanel.java',
+    'activitystream/homepanel/model/TopStory.java',
+    'activitystream/homepanel/model/WebpageModel.java',
+    'activitystream/homepanel/model/WebpageRowModel.java',
+    'activitystream/homepanel/stream/StreamOverridablePageIconLayout.java',
+    'activitystream/homepanel/stream/StreamTitleRow.java',
+    'activitystream/homepanel/stream/StreamViewHolder.java',
+    'activitystream/homepanel/stream/TopPanelRow.java',
+    'activitystream/homepanel/stream/WebpageItemRow.java',
+    'activitystream/homepanel/stream/WelcomePanelRow.java',
+    'activitystream/homepanel/StreamHighlightItemRowContextMenuListener.java',
     'activitystream/homepanel/StreamItemAnimator.java',
     'activitystream/homepanel/StreamRecyclerAdapter.java',
     'activitystream/homepanel/topsites/TopSitesCard.java',
@@ -551,6 +560,7 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'CustomEditText.java',
     'customtabs/ActionBarPresenter.java',
     'customtabs/CustomTabsActivity.java',
+    'customtabs/CustomTabsSecurityPopup.java',
     'customtabs/GeckoCustomTabsService.java',
     'customtabs/IntentUtil.java',
     'DataReportingNotification.java',
@@ -612,6 +622,8 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'dlc/VerifyAction.java',
     'DoorHangerPopup.java',
     'DownloadsIntegration.java',
+    'drawable/DrawableWrapper.java',
+    'drawable/ShiftDrawable.java',
     'DynamicToolbar.java',
     'EditBookmarkDialog.java',
     'Experiments.java',
@@ -642,6 +654,7 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'firstrun/FirstrunPager.java',
     'firstrun/FirstrunPagerConfig.java',
     'firstrun/FirstrunPanel.java',
+    'firstrun/LastPanel.java',
     'firstrun/RestrictedWelcomePanel.java',
     'firstrun/SyncPanel.java',
     'firstrun/TabQueuePanel.java',
@@ -934,7 +947,6 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'toolbar/ToolbarEditLayout.java',
     'toolbar/ToolbarEditText.java',
     'toolbar/ToolbarPrefs.java',
-    'toolbar/ToolbarProgressView.java',
     'trackingprotection/TrackingProtectionPrompt.java',
     'updater/PostUpdateHandler.java',
     'updater/UpdateService.java',
@@ -955,6 +967,7 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'widget/AllCapsTextView.java',
     'widget/AnchoredPopup.java',
     'widget/AnimatedHeightLayout.java',
+    'widget/AnimatedProgressBar.java',
     'widget/BasicColorPicker.java',
     'widget/CheckableLinearLayout.java',
     'widget/ClickableWhenDisabledEditText.java',
@@ -1001,17 +1014,16 @@ gbjar.sources += ['java/org/mozilla/gecko/' + x for x in [
     'widget/themed/ThemedImageView.java',
     'widget/themed/ThemedLinearLayout.java',
     'widget/themed/ThemedListView.java',
+    'widget/themed/ThemedProgressBar.java',
     'widget/themed/ThemedRelativeLayout.java',
     'widget/themed/ThemedTextSwitcher.java',
     'widget/themed/ThemedTextView.java',
     'widget/themed/ThemedView.java',
 ]]
-# The following sources are Photon specific, Eventually they should be merged into base/
-# when we are ready to drop Australis sources.
+# The following sources are Photon specific, Eventually they should be merged into base.
 gbjar.sources += ['../app/src/photon/java/org/mozilla/gecko/' + x for x in [
     'home/SearchEngineRow.java',
     'home/SuggestionItem.java',
-    'skin/SkinConfig.java',
     'toolbar/BrowserToolbarTablet.java',
     'toolbar/BrowserToolbarTabletBase.java',
     'toolbar/ForwardButton.java',

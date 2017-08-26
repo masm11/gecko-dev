@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Generated with cbindgen:0.1.19 */
+/* Generated with cbindgen:0.1.23 */
 
 /* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen.
  * To generate this file:
  *   1. Get the latest cbindgen using `cargo install --force cbindgen`
  *      a. Alternatively, you can clone `https://github.com/rlhunt/cbindgen` and use a tagged release
- *   2. Run `cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
+ *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
  */
 
 #include <cstdint>
@@ -51,9 +51,10 @@ enum class ExtendMode : uint32_t {
 
 enum class ExternalImageType : uint32_t {
   Texture2DHandle = 0,
-  TextureRectHandle = 1,
-  TextureExternalHandle = 2,
-  ExternalBuffer = 3,
+  Texture2DArrayHandle = 1,
+  TextureRectHandle = 2,
+  TextureExternalHandle = 3,
+  ExternalBuffer = 4,
 
   Sentinel /* this must be last for serialization purposes. */
 };
@@ -73,6 +74,22 @@ enum class ImageRendering : uint32_t {
   Auto = 0,
   CrispEdges = 1,
   Pixelated = 2,
+
+  Sentinel /* this must be last for serialization purposes. */
+};
+
+enum class LineOrientation : uint8_t {
+  Vertical = 0,
+  Horizontal = 1,
+
+  Sentinel /* this must be last for serialization purposes. */
+};
+
+enum class LineStyle : uint8_t {
+  Solid = 0,
+  Dotted = 1,
+  Dashed = 2,
+  Wavy = 3,
 
   Sentinel /* this must be last for serialization purposes. */
 };
@@ -144,10 +161,10 @@ enum class YuvColorSpace : uint32_t {
 
 struct Arc_VecU8;
 
-struct LayerPixel;
+struct DocumentHandle;
 
-struct RenderApi;
-
+// The renderer is responsible for submitting to the GPU the work prepared by the
+// RenderBackend.
 struct Renderer;
 
 struct Vec_u8;
@@ -255,8 +272,16 @@ struct Epoch {
 
 typedef Epoch WrEpoch;
 
+// This type carries no valuable semantics for WR. However, it reflects the fact that
+// clients (Servo) may generate pipelines by different semi-independent sources.
+// These pipelines still belong to the same `IdNamespace` and the same `DocumentId`.
+// Having this extra Id field enables them to generate `PipelineId` without collision.
+typedef uint32_t PipelineSourceId;
+
+// From the point of view of WR, `PipelineId` is completely opaque and generic as long as
+// it's clonable, serializable, comparable, and hashable.
 struct PipelineId {
-  uint32_t mNamespace;
+  PipelineSourceId mNamespace;
   uint32_t mHandle;
 
   bool operator==(const PipelineId& aOther) const {
@@ -281,15 +306,25 @@ typedef TypedSize2D_f32__LayerPixel LayerSize;
 
 typedef LayerSize LayoutSize;
 
+// Describes the memory layout of a display list.
+// 
+// A display list consists of some number of display list items, followed by a number of display
+// items.
 struct BuiltDisplayListDescriptor {
+  // The first IPC time stamp: before any work has been done
   uint64_t builder_start_time;
+  // The second IPC time stamp: after serialization
   uint64_t builder_finish_time;
+  // The third IPC time stamp: just before sending
   uint64_t send_start_time;
+  // The offset where DisplayItems stop and the Glyph list starts
+  size_t glyph_offset;
 
   bool operator==(const BuiltDisplayListDescriptor& aOther) const {
     return builder_start_time == aOther.builder_start_time &&
            builder_finish_time == aOther.builder_finish_time &&
-           send_start_time == aOther.send_start_time;
+           send_start_time == aOther.send_start_time &&
+           glyph_offset == aOther.glyph_offset;
   }
 };
 
@@ -353,8 +388,6 @@ struct TypedTransform3D_f32__LayoutPixel__LayoutPixel {
   }
 };
 
-typedef LayerPixel LayoutPixel;
-
 typedef TypedTransform3D_f32__LayoutPixel__LayoutPixel LayoutTransform;
 
 struct WrTransformProperty {
@@ -364,6 +397,10 @@ struct WrTransformProperty {
 
 typedef IdNamespace WrIdNamespace;
 
+// Represents RGBA screen colors with floating point numbers.
+// 
+// All components must be between 0.0 and 1.0.
+// An alpha value of 1.0 is opaque while 0.0 is fully transparent.
 struct ColorF {
   float r;
   float g;
@@ -388,6 +425,7 @@ struct TypedPoint2D_f32__LayerPixel {
   }
 };
 
+// A 2d Rectangle optionally tagged with a unit.
 struct TypedRect_f32__LayerPixel {
   TypedPoint2D_f32__LayerPixel origin;
   TypedSize2D_f32__LayerPixel size;
@@ -401,6 +439,42 @@ struct TypedRect_f32__LayerPixel {
 typedef TypedRect_f32__LayerPixel LayerRect;
 
 typedef LayerRect LayoutRect;
+
+struct BorderRadius {
+  LayoutSize top_left;
+  LayoutSize top_right;
+  LayoutSize bottom_left;
+  LayoutSize bottom_right;
+
+  bool operator==(const BorderRadius& aOther) const {
+    return top_left == aOther.top_left &&
+           top_right == aOther.top_right &&
+           bottom_left == aOther.bottom_left &&
+           bottom_right == aOther.bottom_right;
+  }
+};
+
+struct WrComplexClipRegion {
+  LayoutRect rect;
+  BorderRadius radii;
+
+  bool operator==(const WrComplexClipRegion& aOther) const {
+    return rect == aOther.rect &&
+           radii == aOther.radii;
+  }
+};
+
+struct WrImageMask {
+  WrImageKey image;
+  LayoutRect rect;
+  bool repeat;
+
+  bool operator==(const WrImageMask& aOther) const {
+    return image == aOther.image &&
+           rect == aOther.rect &&
+           repeat == aOther.repeat;
+  }
+};
 
 struct BorderWidths {
   float left;
@@ -426,20 +500,6 @@ struct BorderSide {
   }
 };
 
-struct BorderRadius {
-  LayoutSize top_left;
-  LayoutSize top_right;
-  LayoutSize bottom_left;
-  LayoutSize bottom_right;
-
-  bool operator==(const BorderRadius& aOther) const {
-    return top_left == aOther.top_left &&
-           top_right == aOther.top_right &&
-           bottom_left == aOther.bottom_left &&
-           bottom_right == aOther.bottom_right;
-  }
-};
-
 typedef TypedPoint2D_f32__LayerPixel LayerPoint;
 
 typedef LayerPoint LayoutPoint;
@@ -454,6 +514,7 @@ struct GradientStop {
   }
 };
 
+// The default side offset type with no unit.
 struct SideOffsets2D_f32 {
   float top;
   float right;
@@ -468,6 +529,7 @@ struct SideOffsets2D_f32 {
   }
 };
 
+// The default side offset type with no unit.
 struct SideOffsets2D_u32 {
   uint32_t top;
   uint32_t right;
@@ -508,28 +570,6 @@ typedef TypedVector2D_f32__LayerPixel LayerVector2D;
 
 typedef LayerVector2D LayoutVector2D;
 
-struct WrComplexClipRegion {
-  LayoutRect rect;
-  BorderRadius radii;
-
-  bool operator==(const WrComplexClipRegion& aOther) const {
-    return rect == aOther.rect &&
-           radii == aOther.radii;
-  }
-};
-
-struct WrImageMask {
-  WrImageKey image;
-  LayoutRect rect;
-  bool repeat;
-
-  bool operator==(const WrImageMask& aOther) const {
-    return image == aOther.image &&
-           rect == aOther.rect &&
-           repeat == aOther.repeat;
-  }
-};
-
 struct WrFilterOp {
   WrFilterOpType filter_type;
   float argument;
@@ -540,13 +580,27 @@ struct WrFilterOp {
   }
 };
 
+typedef uint32_t GlyphIndex;
+
 struct GlyphInstance {
-  uint32_t index;
+  GlyphIndex index;
   LayoutPoint point;
 
   bool operator==(const GlyphInstance& aOther) const {
     return index == aOther.index &&
            point == aOther.point;
+  }
+};
+
+struct TextShadow {
+  LayoutVector2D offset;
+  ColorF color;
+  float blur_radius;
+
+  bool operator==(const TextShadow& aOther) const {
+    return offset == aOther.offset &&
+           color == aOther.color &&
+           blur_radius == aOther.blur_radius;
   }
 };
 
@@ -573,6 +627,14 @@ struct WrWindowId {
   }
   bool operator<=(const WrWindowId& aOther) const {
     return mHandle <= aOther.mHandle;
+  }
+};
+
+struct WrDebugFlags {
+  uint32_t mBits;
+
+  bool operator==(const WrDebugFlags& aOther) const {
+    return mBits == aOther.mBits;
   }
 };
 
@@ -618,22 +680,34 @@ struct WrExternalImageHandler {
  * To generate this file:
  *   1. Get the latest cbindgen using `cargo install --force cbindgen`
  *      a. Alternatively, you can clone `https://github.com/rlhunt/cbindgen` and use a tagged release
- *   2. Run `cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
+ *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
  */
+
+extern void gfx_critical_note(const char *aMsg);
+
+extern bool gfx_use_wrench();
+
+extern bool is_glcontext_egl(void *aGlcontextPtr);
+
+extern bool is_in_compositor_thread();
+
+extern bool is_in_main_thread();
+
+extern bool is_in_render_thread();
 
 WR_INLINE
 const VecU8 *wr_add_ref_arc(const ArcVecU8 *aArc)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_add_blob_image(RenderApi *aApi,
+void wr_api_add_blob_image(DocumentHandle *aDh,
                            WrImageKey aImageKey,
                            const WrImageDescriptor *aDescriptor,
                            ByteSlice aBytes)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_add_external_image(RenderApi *aApi,
+void wr_api_add_external_image(DocumentHandle *aDh,
                                WrImageKey aImageKey,
                                const WrImageDescriptor *aDescriptor,
                                WrExternalImageId aExternalImageId,
@@ -642,14 +716,14 @@ void wr_api_add_external_image(RenderApi *aApi,
 WR_FUNC;
 
 WR_INLINE
-void wr_api_add_image(RenderApi *aApi,
+void wr_api_add_image(DocumentHandle *aDh,
                       WrImageKey aImageKey,
                       const WrImageDescriptor *aDescriptor,
                       ByteSlice aBytes)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_add_raw_font(RenderApi *aApi,
+void wr_api_add_raw_font(DocumentHandle *aDh,
                          WrFontKey aKey,
                          uint8_t *aFontBuffer,
                          size_t aBufferSize,
@@ -657,22 +731,27 @@ void wr_api_add_raw_font(RenderApi *aApi,
 WR_FUNC;
 
 WR_INLINE
-void wr_api_clear_root_display_list(RenderApi *aApi,
+void wr_api_clear_root_display_list(DocumentHandle *aDh,
                                     WrEpoch aEpoch,
                                     WrPipelineId aPipelineId)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_delete(RenderApi *aApi)
+void wr_api_clone(DocumentHandle *aDh,
+                  DocumentHandle **aOutHandle)
+WR_FUNC;
+
+WR_INLINE
+void wr_api_delete(DocumentHandle *aDh)
 WR_DESTRUCTOR_SAFE_FUNC;
 
 WR_INLINE
-void wr_api_delete_font(RenderApi *aApi,
+void wr_api_delete_font(DocumentHandle *aDh,
                         WrFontKey aKey)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_delete_image(RenderApi *aApi,
+void wr_api_delete_image(DocumentHandle *aDh,
                          WrImageKey aKey)
 WR_FUNC;
 
@@ -684,11 +763,11 @@ void wr_api_finalize_builder(WrState *aState,
 WR_FUNC;
 
 WR_INLINE
-void wr_api_generate_frame(RenderApi *aApi)
+void wr_api_generate_frame(DocumentHandle *aDh)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_generate_frame_with_properties(RenderApi *aApi,
+void wr_api_generate_frame_with_properties(DocumentHandle *aDh,
                                            const WrOpacityProperty *aOpacityArray,
                                            size_t aOpacityCount,
                                            const WrTransformProperty *aTransformArray,
@@ -696,16 +775,16 @@ void wr_api_generate_frame_with_properties(RenderApi *aApi,
 WR_FUNC;
 
 WR_INLINE
-WrIdNamespace wr_api_get_namespace(RenderApi *aApi)
+WrIdNamespace wr_api_get_namespace(DocumentHandle *aDh)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_send_external_event(RenderApi *aApi,
+void wr_api_send_external_event(DocumentHandle *aDh,
                                 size_t aEvt)
 WR_DESTRUCTOR_SAFE_FUNC;
 
 WR_INLINE
-void wr_api_set_root_display_list(RenderApi *aApi,
+void wr_api_set_root_display_list(DocumentHandle *aDh,
                                   ColorF aColor,
                                   WrEpoch aEpoch,
                                   float aViewportWidth,
@@ -718,25 +797,25 @@ void wr_api_set_root_display_list(RenderApi *aApi,
 WR_FUNC;
 
 WR_INLINE
-void wr_api_set_root_pipeline(RenderApi *aApi,
+void wr_api_set_root_pipeline(DocumentHandle *aDh,
                               WrPipelineId aPipelineId)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_set_window_parameters(RenderApi *aApi,
+void wr_api_set_window_parameters(DocumentHandle *aDh,
                                   int32_t aWidth,
                                   int32_t aHeight)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_update_blob_image(RenderApi *aApi,
+void wr_api_update_blob_image(DocumentHandle *aDh,
                               WrImageKey aImageKey,
                               const WrImageDescriptor *aDescriptor,
                               ByteSlice aBytes)
 WR_FUNC;
 
 WR_INLINE
-void wr_api_update_external_image(RenderApi *aApi,
+void wr_api_update_external_image(DocumentHandle *aDh,
                                   WrImageKey aKey,
                                   const WrImageDescriptor *aDescriptor,
                                   WrExternalImageId aExternalImageId,
@@ -745,7 +824,7 @@ void wr_api_update_external_image(RenderApi *aApi,
 WR_FUNC;
 
 WR_INLINE
-void wr_api_update_image(RenderApi *aApi,
+void wr_api_update_image(DocumentHandle *aDh,
                          WrImageKey aKey,
                          const WrImageDescriptor *aDescriptor,
                          ByteSlice aBytes)
@@ -759,6 +838,14 @@ WR_INLINE
 void wr_dp_begin(WrState *aState,
                  uint32_t aWidth,
                  uint32_t aHeight)
+WR_FUNC;
+
+WR_INLINE
+uint64_t wr_dp_define_clip(WrState *aState,
+                           LayoutRect aClipRect,
+                           const WrComplexClipRegion *aComplex,
+                           size_t aComplexCount,
+                           const WrImageMask *aMask)
 WR_FUNC;
 
 WR_INLINE
@@ -779,6 +866,10 @@ WR_FUNC;
 
 WR_INLINE
 void wr_dp_pop_stacking_context(WrState *aState)
+WR_FUNC;
+
+WR_INLINE
+void wr_dp_pop_text_shadow(WrState *aState)
 WR_FUNC;
 
 WR_INLINE
@@ -851,11 +942,8 @@ void wr_dp_push_built_display_list(WrState *aState,
 WR_FUNC;
 
 WR_INLINE
-uint64_t wr_dp_push_clip(WrState *aState,
-                         LayoutRect aRect,
-                         const WrComplexClipRegion *aComplex,
-                         size_t aComplexCount,
-                         const WrImageMask *aMask)
+void wr_dp_push_clip(WrState *aState,
+                     uint64_t aClipId)
 WR_FUNC;
 
 WR_INLINE
@@ -878,6 +966,18 @@ void wr_dp_push_image(WrState *aState,
                       LayoutSize aTileSpacing,
                       ImageRendering aImageRendering,
                       WrImageKey aKey)
+WR_FUNC;
+
+WR_INLINE
+void wr_dp_push_line(WrState *aState,
+                     LayoutRect aClip,
+                     float aBaseline,
+                     float aStart,
+                     float aEnd,
+                     LineOrientation aOrientation,
+                     float aWidth,
+                     ColorF aColor,
+                     LineStyle aStyle)
 WR_FUNC;
 
 WR_INLINE
@@ -927,6 +1027,7 @@ void wr_dp_push_stacking_context(WrState *aState,
                                  const float *aOpacity,
                                  const LayoutTransform *aTransform,
                                  TransformStyle aTransformStyle,
+                                 const LayoutTransform *aPerspective,
                                  MixBlendMode aMixBlendMode,
                                  const WrFilterOp *aFilters,
                                  size_t aFilterCount)
@@ -944,6 +1045,14 @@ void wr_dp_push_text(WrState *aState,
 WR_FUNC;
 
 WR_INLINE
+void wr_dp_push_text_shadow(WrState *aState,
+                            LayoutRect aBounds,
+                            LayoutRect aClip,
+                            TextShadow aShadow)
+WR_FUNC;
+
+// Push a 2 planar NV12 image.
+WR_INLINE
 void wr_dp_push_yuv_NV12_image(WrState *aState,
                                LayoutRect aBounds,
                                LayoutRect aClip,
@@ -953,6 +1062,7 @@ void wr_dp_push_yuv_NV12_image(WrState *aState,
                                ImageRendering aImageRendering)
 WR_FUNC;
 
+// Push a yuv interleaved image.
 WR_INLINE
 void wr_dp_push_yuv_interleaved_image(WrState *aState,
                                       LayoutRect aBounds,
@@ -962,6 +1072,7 @@ void wr_dp_push_yuv_interleaved_image(WrState *aState,
                                       ImageRendering aImageRendering)
 WR_FUNC;
 
+// Push a 3 planar yuv image.
 WR_INLINE
 void wr_dp_push_yuv_planar_image(WrState *aState,
                                  LayoutRect aBounds,
@@ -972,6 +1083,20 @@ void wr_dp_push_yuv_planar_image(WrState *aState,
                                  WrYuvColorSpace aColorSpace,
                                  ImageRendering aImageRendering)
 WR_FUNC;
+
+extern bool wr_moz2d_render_cb(ByteSlice aBlob,
+                               uint32_t aWidth,
+                               uint32_t aHeight,
+                               ImageFormat aFormat,
+                               MutByteSlice aOutput);
+
+extern void wr_notifier_external_event(WrWindowId aWindowId,
+                                       size_t aRawEvent);
+
+extern void wr_notifier_new_frame_ready(WrWindowId aWindowId);
+
+extern void wr_notifier_new_scroll_frame_ready(WrWindowId aWindowId,
+                                               bool aCompositeNeeded);
 
 WR_INLINE
 void wr_rendered_epochs_delete(WrRenderedEpochs *aPipelineEpochs)
@@ -998,6 +1123,10 @@ WrRenderedEpochs *wr_renderer_flush_rendered_epochs(Renderer *aRenderer)
 WR_FUNC;
 
 WR_INLINE
+WrDebugFlags wr_renderer_get_debug_flags(Renderer *aRenderer)
+WR_FUNC;
+
+WR_INLINE
 void wr_renderer_readback(Renderer *aRenderer,
                           uint32_t aWidth,
                           uint32_t aHeight,
@@ -1012,13 +1141,13 @@ void wr_renderer_render(Renderer *aRenderer,
 WR_FUNC;
 
 WR_INLINE
-void wr_renderer_set_external_image_handler(Renderer *aRenderer,
-                                            WrExternalImageHandler *aExternalImageHandler)
+void wr_renderer_set_debug_flags(Renderer *aRenderer,
+                                 WrDebugFlags aFlags)
 WR_FUNC;
 
 WR_INLINE
-void wr_renderer_set_profiler_enabled(Renderer *aRenderer,
-                                      bool aEnabled)
+void wr_renderer_set_external_image_handler(Renderer *aRenderer,
+                                            WrExternalImageHandler *aExternalImageHandler)
 WR_FUNC;
 
 WR_INLINE
@@ -1026,7 +1155,7 @@ void wr_renderer_update(Renderer *aRenderer)
 WR_FUNC;
 
 WR_INLINE
-void wr_scroll_layer_with_id(RenderApi *aApi,
+void wr_scroll_layer_with_id(DocumentHandle *aDh,
                              WrPipelineId aPipelineId,
                              uint64_t aScrollId,
                              LayoutPoint aNewScrollOrigin)
@@ -1059,9 +1188,9 @@ bool wr_window_new(WrWindowId aWindowId,
                    uint32_t aWindowHeight,
                    void *aGlContext,
                    WrThreadPool *aThreadPool,
-                   bool aEnableProfiler,
-                   RenderApi **aOutApi,
-                   Renderer **aOutRenderer)
+                   DocumentHandle **aOutHandle,
+                   Renderer **aOutRenderer,
+                   uint32_t *aOutMaxTextureSize)
 WR_FUNC;
 
 } // namespace wr
@@ -1073,5 +1202,5 @@ WR_FUNC;
  * To generate this file:
  *   1. Get the latest cbindgen using `cargo install --force cbindgen`
  *      a. Alternatively, you can clone `https://github.com/rlhunt/cbindgen` and use a tagged release
- *   2. Run `cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
+ *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --crate webrender_bindings -o gfx/webrender_bindings/webrender_ffi_generated.h`
  */

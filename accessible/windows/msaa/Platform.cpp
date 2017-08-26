@@ -30,6 +30,8 @@ static StaticAutoPtr<RegisteredProxy> gRegCustomProxy;
 static StaticAutoPtr<RegisteredProxy> gRegProxy;
 static StaticAutoPtr<RegisteredProxy> gRegAccTlb;
 static StaticAutoPtr<RegisteredProxy> gRegMiscTlb;
+static nsString* gInstantiator = nullptr;
+
 void
 a11y::PlatformInit()
 {
@@ -37,22 +39,21 @@ a11y::PlatformInit()
 
   nsWinUtils::MaybeStartWindowEmulation();
   ia2AccessibleText::InitTextChangeData();
-  if (BrowserTabsRemoteAutostart()) {
-    mscom::InterceptorLog::Init();
-    UniquePtr<RegisteredProxy> regCustomProxy(
-        mscom::RegisterProxy());
-    gRegCustomProxy = regCustomProxy.release();
-    UniquePtr<RegisteredProxy> regProxy(
-        mscom::RegisterProxy(L"ia2marshal.dll"));
-    gRegProxy = regProxy.release();
-    UniquePtr<RegisteredProxy> regAccTlb(
-        mscom::RegisterTypelib(L"oleacc.dll",
-                               RegistrationFlags::eUseSystemDirectory));
-    gRegAccTlb = regAccTlb.release();
-    UniquePtr<RegisteredProxy> regMiscTlb(
-        mscom::RegisterTypelib(L"Accessible.tlb"));
-    gRegMiscTlb = regMiscTlb.release();
-  }
+
+  mscom::InterceptorLog::Init();
+  UniquePtr<RegisteredProxy> regCustomProxy(
+      mscom::RegisterProxy());
+  gRegCustomProxy = regCustomProxy.release();
+  UniquePtr<RegisteredProxy> regProxy(
+      mscom::RegisterProxy(L"ia2marshal.dll"));
+  gRegProxy = regProxy.release();
+  UniquePtr<RegisteredProxy> regAccTlb(
+      mscom::RegisterTypelib(L"oleacc.dll",
+                             RegistrationFlags::eUseSystemDirectory));
+  gRegAccTlb = regAccTlb.release();
+  UniquePtr<RegisteredProxy> regMiscTlb(
+      mscom::RegisterTypelib(L"Accessible.tlb"));
+  gRegMiscTlb = regMiscTlb.release();
 }
 
 void
@@ -65,6 +66,11 @@ a11y::PlatformShutdown()
   gRegProxy = nullptr;
   gRegAccTlb = nullptr;
   gRegMiscTlb = nullptr;
+
+  if (gInstantiator) {
+    delete gInstantiator;
+    gInstantiator = nullptr;
+  }
 }
 
 void
@@ -204,5 +210,26 @@ a11y::IsHandlerRegistered()
     return false;
   }
 
+  return true;
+}
+
+void
+a11y::SetInstantiator(const nsAString& aInstantiator)
+{
+  if (!gInstantiator) {
+    gInstantiator = new nsString();
+  }
+
+  gInstantiator->Assign(aInstantiator);
+}
+
+bool
+a11y::GetInstantiator(nsAString& aInstantiator)
+{
+  if (!gInstantiator) {
+    return false;
+  }
+
+  aInstantiator.Assign(*gInstantiator);
   return true;
 }

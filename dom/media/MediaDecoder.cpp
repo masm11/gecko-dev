@@ -6,7 +6,6 @@
 
 #include "MediaDecoder.h"
 
-#include "AudioChannelService.h"
 #include "ImageContainer.h"
 #include "Layers.h"
 #include "MediaDecoderStateMachine.h"
@@ -368,7 +367,6 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
   , mFrameStats(new FrameStatistics())
   , mVideoFrameContainer(aInit.mOwner->GetVideoFrameContainer())
   , mPinnedForSeek(false)
-  , mAudioChannel(aInit.mAudioChannel)
   , mMinimizePreroll(aInit.mMinimizePreroll)
   , mFiredMetadataLoaded(false)
   , mIsDocumentVisible(false)
@@ -567,7 +565,6 @@ void
 MediaDecoder::FinishShutdown()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  mDecoderStateMachine->BreakCycles();
   SetStateMachine(nullptr);
   mVideoFrameContainer = nullptr;
   MediaShutdownManager::Instance().Unregister(this);
@@ -683,6 +680,11 @@ MediaDecoder::CallSeek(const SeekTarget& aTarget)
   MOZ_ASSERT(NS_IsMainThread());
   AbstractThread::AutoEnter context(AbstractMainThread());
   DiscardOngoingSeekIfExists();
+
+  // Since we don't have a listener for changes in IsLiveStream, our best bet
+  // is to ensure IsLiveStream is uptodate when seek begins. This value will be
+  // checked when seek is completed.
+  mDecoderStateMachine->DispatchIsLiveStream(IsLiveStream());
 
   mDecoderStateMachine->InvokeSeek(aTarget)
   ->Then(mAbstractMainThread, __func__, this,
@@ -806,16 +808,13 @@ MediaDecoder::FirstFrameLoaded(nsAutoPtr<MediaInfo> aInfo,
   AbstractThread::AutoEnter context(AbstractMainThread());
 
   LOG("FirstFrameLoaded, channels=%u rate=%u hasAudio=%d hasVideo=%d "
-      "mPlayState=%s",
+      "mPlayState=%s transportSeekable=%d",
       aInfo->mAudio.mChannels, aInfo->mAudio.mRate, aInfo->HasAudio(),
-      aInfo->HasVideo(), PlayStateStr());
+      aInfo->HasVideo(), PlayStateStr(), IsTransportSeekable());
 
   mInfo = aInfo.forget();
 
   Invalidate();
-
-  // This can run cache callbacks.
-  GetResource()->EnsureCacheUpToDate();
 
   // The element can run javascript via events
   // before reaching here, so only change the
@@ -824,10 +823,6 @@ MediaDecoder::FirstFrameLoaded(nsAutoPtr<MediaInfo> aInfo,
   if (mPlayState == PLAY_STATE_LOADING) {
     ChangeState(mNextState);
   }
-
-  // Run NotifySuspendedStatusChanged now to give us a chance to notice
-  // that autoplay should run.
-  NotifySuspendedStatusChanged();
 
   // GetOwner()->FirstFrameLoaded() might call us back. Put it at the bottom of
   // this function to avoid unexpected shutdown from reentrant calls.
@@ -908,18 +903,6 @@ MediaDecoder::PlaybackEnded()
   ChangeState(PLAY_STATE_ENDED);
   InvalidateWithFlags(VideoFrameContainer::INVALIDATE_FORCE);
   GetOwner()->PlaybackEnded();
-}
-
-void
-MediaDecoder::NotifySuspendedStatusChanged()
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
-  AbstractThread::AutoEnter context(AbstractMainThread());
-  if (MediaResource* r = GetResource()) {
-    bool suspended = r->IsSuspendedByCache();
-    GetOwner()->NotifySuspendedByCache(suspended);
-  }
 }
 
 void
@@ -1182,13 +1165,6 @@ MediaDecoder::HasSuspendTaint() const
 {
   MOZ_ASSERT(NS_IsMainThread());
   return mHasSuspendTaint;
-}
-
-bool
-MediaDecoder::IsTransportSeekable()
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  return GetResource()->IsTransportSeekable();
 }
 
 bool
@@ -1628,6 +1604,14 @@ MediaDecoder::RequestDebugInfo()
     [str] () {
       return DebugInfoPromise::CreateAndResolve(str, __func__);
     });
+}
+
+void
+MediaDecoder::GetMozDebugReaderData(nsACString& aString)
+{
+  if (mReader) {
+    mReader->GetMozDebugReaderData(aString);
+  }
 }
 
 void

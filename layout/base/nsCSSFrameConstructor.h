@@ -99,8 +99,14 @@ private:
   // aChild is the child being inserted for inserts, and the first
   // child being appended for appends.
   bool MaybeConstructLazily(Operation aOperation,
-                              nsIContent* aContainer,
-                              nsIContent* aChild);
+                            nsIContent* aContainer,
+                            nsIContent* aChild);
+
+#ifdef DEBUG
+  void CheckBitsForLazyFrameConstruction(nsIContent* aParent);
+#else
+  void CheckBitsForLazyFrameConstruction(nsIContent*) {}
+#endif
 
   // Issues a single ContentInserted for each child of aContainer in the range
   // [aStartChild, aEndChild).
@@ -156,8 +162,8 @@ private:
 
   // Returns true if parent was recreated due to frameset child, false otherwise.
   bool MaybeRecreateForFrameset(nsIFrame* aParentFrame,
-                                  nsIContent* aStartChild,
-                                  nsIContent* aEndChild);
+                                nsIContent* aStartChild,
+                                nsIContent* aEndChild);
 
   /**
    * For each child in the aStartChild/aEndChild range, calls
@@ -300,6 +306,10 @@ private:
                             TreeMatchContext* aProvidedTreeMatchContext);
 
 public:
+  // FIXME(emilio): How important is it to keep the frame tree state around for
+  // REMOVE_DESTROY_FRAMES?
+  //
+  // Seems like otherwise we could just remove it.
   enum RemoveFlags {
     REMOVE_CONTENT, REMOVE_FOR_RECONSTRUCTION, REMOVE_DESTROY_FRAMES };
   /**
@@ -308,7 +318,7 @@ public:
    * aFlags == REMOVE_FOR_RECONSTRUCTION means the caller will reconstruct the
    *   frames later.
    * In both the above cases, this method will in some cases try to reconstruct
-   * the frames (aDidReconstruct is then set to true), it's just that in the
+   * the frames (and true will be returned in that case), it's just that in the
    * former case aChild isn't in the document so no frames will be created for
    * it.  Ancestors may have been reframed though.
    * aFlags == REMOVE_DESTROY_FRAMES is the same as REMOVE_FOR_RECONSTRUCTION
@@ -318,12 +328,10 @@ public:
    * only when aFlags == REMOVE_DESTROY_FRAMES, otherwise it will only be
    * captured if we reconstructed frames for an ancestor.
    */
-  void ContentRemoved(nsIContent*  aContainer,
-                      nsIContent*  aChild,
-                      nsIContent*  aOldNextSibling,
-                      RemoveFlags  aFlags,
-                      bool*        aDidReconstruct,
-                      nsIContent** aDestroyedFramesFor = nullptr);
+  bool ContentRemoved(nsIContent* aContainer,
+                      nsIContent* aChild,
+                      nsIContent* aOldNextSibling,
+                      RemoveFlags aFlags);
 
   void CharacterDataChanged(nsIContent* aContent,
                             CharacterDataChangeInfo* aInfo);
@@ -355,14 +363,11 @@ public:
 
   /**
    * Destroy the frames for aContent.  Note that this may destroy frames
-   * for an ancestor instead - aDestroyedFramesFor contains the content node
-   * where frames were actually destroyed (which should be used in the
-   * ContentInserted call to recreate frames).  The frame tree state
-   * is captured before the frames are destroyed and can be retrieved using
-   * GetLastCapturedLayoutHistoryState().
+   * for an ancestor instead.
+   *
+   * Returns whether a reconstruct was posted for any ancestor.
    */
-  void DestroyFramesFor(nsIContent*  aContent,
-                        nsIContent** aDestroyedFramesFor);
+  bool DestroyFramesFor(mozilla::dom::Element* aElement);
 
   // Request to create a continuing frame.  This method never returns null.
   nsIFrame* CreateContinuingFrame(nsPresContext*    aPresContext,
@@ -396,15 +401,6 @@ public:
   // Get the frame that is the parent of the root element.
   nsContainerFrame* GetDocElementContainingBlock()
     { return mDocElementContainingBlock; }
-
-  /**
-   * Return the layout history state that was captured in the last
-   * ContentRemoved / RecreateFramesForContent call.
-   */
-  nsILayoutHistoryState* GetLastCapturedLayoutHistoryState()
-  {
-    return mTempFrameTreeState;
-  }
 
 private:
   struct FrameConstructionItem;
@@ -772,6 +768,12 @@ private:
    * a block wrapper when the styles says so.
    */
 #define FCDATA_ALLOW_GRID_FLEX_COLUMNSET 0x200000
+  /**
+   * Whether the kids of this FrameConstructionData should be flagged as having
+   * a wrapper anon box parent.  This should only be set if
+   * FCDATA_USE_CHILD_ITEMS is set.
+   */
+#define FCDATA_IS_WRAPPER_ANON_BOX 0x400000
 
   /* Structure representing information about how a frame should be
      constructed.  */
@@ -892,7 +894,7 @@ private:
           mUndisplayedItems[0].mStyleContext->PresContext()->FrameManager();
         for (uint32_t i = 0; i < mUndisplayedItems.Length(); ++i) {
           UndisplayedItem& item = mUndisplayedItems[i];
-          mgr->SetUndisplayedContent(item.mContent, item.mStyleContext);
+          mgr->RegisterDisplayNoneStyleFor(item.mContent, item.mStyleContext);
         }
       }
     }
@@ -1507,6 +1509,7 @@ private:
   void ConstructFramesFromItemList(nsFrameConstructorState& aState,
                                    FrameConstructionItemList& aItems,
                                    nsContainerFrame* aParentFrame,
+                                   bool aParentIsWrapperAnonBox,
                                    nsFrameItems& aFrameItems);
   void ConstructFramesFromItem(nsFrameConstructorState& aState,
                                FCItemIterator& aItem,
@@ -1786,33 +1789,36 @@ private:
   nsStyleContext* MaybeRecreateFramesForElement(Element* aElement);
 
   /**
+   * Whether insertion should be done synchronously or asynchronously.
+   *
+   * Generally, insertion is synchronous if we're reconstructing something from
+   * frame construction/reconstruction, and async if we're removing stuff, like
+   * from ContentRemoved.
+   */
+  enum class InsertionKind
+  {
+    Sync,
+    Async,
+  };
+
+  /**
    * Recreate frames for aContent.
    * @param aContent the content to recreate frames for
-   * @param aAsyncInsert if true then a restyle event will be posted to handle
-   *   the required ContentInserted call instead of doing it immediately.
    * @param aFlags normally you want to pass REMOVE_FOR_RECONSTRUCTION here
-   * @param aDestroyedFramesFor if non-null, it will contain the content that
-   *   was actually reframed - it may be different than aContent.
    */
-  void
-  RecreateFramesForContent(nsIContent*  aContent,
-                           bool         aAsyncInsert,
-                           RemoveFlags  aFlags,
-                           nsIContent** aDestroyedFramesFor);
+  void RecreateFramesForContent(nsIContent*   aContent,
+                                InsertionKind aInsertionKind,
+                                RemoveFlags   aFlags);
 
   // If removal of aFrame from the frame tree requires reconstruction of some
   // containing block (either of aFrame or of its parent) due to {ib} splits or
   // table pseudo-frames, recreate the relevant frame subtree.  The return value
-  // indicates whether this happened.  If this method returns true, *aResult is
-  // the return value of ReframeContainingBlock or RecreateFramesForContent.  If
-  // this method returns false, the value of *aResult is not affected.  aFrame
-  // and aResult must not be null.  aFrame must be the result of a
+  // indicates whether this happened.  aFrame must be the result of a
   // GetPrimaryFrame() call on a content node (which means its parent is also
-  // not null).   If this method returns true, aDestroyedFramesFor contains the
-  // content that was reframed.
-  bool MaybeRecreateContainerForFrameRemoval(nsIFrame*    aFrame,
-                                             RemoveFlags  aFlags,
-                                             nsIContent** aDestroyedFramesFor);
+  // not null).
+  bool MaybeRecreateContainerForFrameRemoval(nsIFrame*     aFrame,
+                                             InsertionKind aInsertionKind,
+                                             RemoveFlags   aFlags);
 
   nsIFrame* CreateContinuingOuterTableFrame(nsIPresShell*     aPresShell,
                                             nsPresContext*    aPresContext,
@@ -1936,9 +1942,9 @@ private:
                              bool                     aIsAppend,
                              nsIFrame*                aPrevSibling);
 
-  void ReframeContainingBlock(nsIFrame*    aFrame,
-                              RemoveFlags  aFlags,
-                              nsIContent** aReframeContent);
+  void ReframeContainingBlock(nsIFrame*     aFrame,
+                              InsertionKind aInsertionKind,
+                              RemoveFlags   aFlags);
 
   //----------------------------------------
 
@@ -1991,7 +1997,8 @@ private:
                                     nsFrameItems&      aLetterFrames,
                                     bool*              aStopLooking);
 
-  void RecoverLetterFrames(nsContainerFrame* aBlockFrame);
+  void RecoverLetterFrames(nsContainerFrame* aBlockFrame,
+                           bool aMayHaveFirstLine);
 
   //
   void RemoveLetterFrames(nsIPresShell*     aPresShell,
@@ -2042,6 +2049,18 @@ private:
                              nsContainerFrame**       aParentFrame,
                              nsIFrame*                aPrevSibling,
                              nsFrameItems&            aFrameItems);
+
+  /**
+   * When aFrameItems is being inserted into aParentFrame, and aParentFrame has
+   * pseudo-element-affected styles, it's possible that we're inserting under a
+   * ::first-line frame.  In that case, with servo's style system, the styles we
+   * resolved for aFrameItems are wrong (they don't take ::first-line into
+   * account), and we should fix them up, which is what this method does.
+   *
+   * This method does not mutate aFrameItems.
+   */
+  void CheckForFirstLineInsertion(nsIFrame* aParentFrame,
+                                  nsFrameItems& aFrameItems);
 
   /**
    * Find the right frame to use for aContent when looking for sibling

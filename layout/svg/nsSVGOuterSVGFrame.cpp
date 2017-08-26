@@ -213,8 +213,10 @@ nsSVGOuterSVGFrame::GetIntrinsicSize()
   IntrinsicSize intrinsicSize;
 
   SVGSVGElement *content = static_cast<SVGSVGElement*>(mContent);
-  nsSVGLength2 &width  = content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
-  nsSVGLength2 &height = content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
+  const nsSVGLength2& width =
+    content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
+  const nsSVGLength2& height =
+    content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
 
   if (!width.IsPercentage()) {
     nscoord val = nsPresContext::CSSPixelsToAppUnits(width.GetAnimValue(content));
@@ -239,8 +241,10 @@ nsSVGOuterSVGFrame::GetIntrinsicRatio()
   // rect: http://www.w3.org/TR/SVGMobile12/coords.html#IntrinsicSizing
 
   SVGSVGElement *content = static_cast<SVGSVGElement*>(mContent);
-  nsSVGLength2 &width  = content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
-  nsSVGLength2 &height = content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
+  const nsSVGLength2& width =
+    content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
+  const nsSVGLength2& height =
+    content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
 
   if (!width.IsPercentage() && !height.IsPercentage()) {
     nsSize ratio(NSToCoordRoundWithClamp(width.GetAnimValue(content)),
@@ -322,7 +326,7 @@ nsSVGOuterSVGFrame::ComputeSize(gfxContext *aRenderingContext,
 
     SVGSVGElement* content = static_cast<SVGSVGElement*>(mContent);
 
-    nsSVGLength2 &width =
+    const nsSVGLength2& width =
       content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
     if (width.IsPercentage()) {
       MOZ_ASSERT(intrinsicSize.width.GetUnit() == eStyleUnit_None,
@@ -332,7 +336,7 @@ nsSVGOuterSVGFrame::ComputeSize(gfxContext *aRenderingContext,
       intrinsicSize.width.SetCoordValue(val * cbSize.Width(aWM));
     }
 
-    nsSVGLength2 &height =
+    const nsSVGLength2& height =
       content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
     NS_ASSERTION(aCBSize.BSize(aWM) != NS_AUTOHEIGHT,
                  "root should not have auto-height containing block");
@@ -760,7 +764,6 @@ nsSVGOuterSVGFrame::IsSVGTransformed(Matrix* aOwnTransform,
 
 void
 nsSVGOuterSVGFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                     const nsRect&           aDirtyRect,
                                      const nsDisplayListSet& aLists)
 {
   if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
@@ -784,7 +787,7 @@ nsSVGOuterSVGFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     nsDisplayList *contentList = aLists.Content();
     nsDisplayListSet set(contentList, contentList, contentList,
                          contentList, contentList, contentList);
-    BuildDisplayListForNonBlockChildren(aBuilder, aDirtyRect, set);
+    BuildDisplayListForNonBlockChildren(aBuilder, set);
   } else if (IsVisibleForPainting(aBuilder) || !aBuilder->IsForPainting()) {
     aLists.Content()->AppendNewToTop(
       new (aBuilder) nsDisplayOuterSVG(aBuilder, this));
@@ -964,8 +967,8 @@ nsSVGOuterSVGFrame::IsRootOfImage()
 bool
 nsSVGOuterSVGFrame::VerticalScrollbarNotNeeded() const
 {
-  nsSVGLength2 &height = static_cast<SVGSVGElement*>(mContent)->
-                           mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
+  const nsSVGLength2& height = static_cast<SVGSVGElement*>(mContent)->
+                                 mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
   return height.IsPercentage() && height.GetBaseValInSpecifiedUnits() <= 100;
 }
 

@@ -9,6 +9,7 @@ description = "Rust code for libxul"
 bindgen = ["gkrust-shared/bindgen"]
 servo = ["gkrust-shared/servo"]
 quantum_render = ["gkrust-shared/quantum_render"]
+cubeb-remoting = ["gkrust-shared/cubeb-remoting"]
 cubeb_pulse_rust = ["gkrust-shared/cubeb_pulse_rust"]
 gecko_debug = ["gkrust-shared/gecko_debug"]
 simd-accel = ["gkrust-shared/simd-accel"]
@@ -40,6 +41,5 @@ panic = "abort"
 [profile.release]
 opt-level = 2
 rpath = false
-lto = true
 debug-assertions = false
 panic = "abort"

@@ -206,7 +206,7 @@ public:
     nsIFrame::WebRenderUserDataTable* userDataTable =
       frame->GetProperty(nsIFrame::WebRenderUserDataProperty());
     RefPtr<WebRenderUserData>& data = userDataTable->GetOrInsert(aItem->GetPerFrameKey());
-    if (!data || (data->GetType() != T::Type())) {
+    if (!data || (data->GetType() != T::Type()) || !data->IsDataValid(this)) {
       data = new T(this);
       if (aOutIsRecycled) {
         *aOutIsRecycled = false;
@@ -221,6 +221,8 @@ public:
     RefPtr<T> res = static_cast<T*>(data.get());
     return res.forget();
   }
+
+  bool ShouldNotifyInvalidation() const { return mShouldNotifyInvalidation; }
 
 private:
   /**
@@ -272,6 +274,22 @@ private:
   // need this so that WebRenderLayerScrollData items that deeper in the
   // tree don't duplicate scroll metadata that their ancestors already have.
   std::vector<const ActiveScrolledRoot*> mAsrStack;
+  const ActiveScrolledRoot* mLastAsr;
+
+public:
+  // Note: two DisplayItemClipChain* A and B might actually be "equal" (as per
+  // DisplayItemClipChain::Equal(A, B)) even though they are not the same pointer
+  // (A != B). In this hopefully-rare case, they will get separate entries
+  // in this map when in fact we could collapse them. However, to collapse
+  // them involves writing a custom hash function for the pointer type such that
+  // A and B hash to the same things whenever DisplayItemClipChain::Equal(A, B)
+  // is true, and that will incur a performance penalty for all the hashmap
+  // operations, so is probably not worth it. With the current code we might
+  // end up creating multiple clips in WR that are effectively identical but
+  // have separate clip ids. Hopefully this won't happen very often.
+  typedef std::unordered_map<const DisplayItemClipChain*, wr::WrClipId> ClipIdMap;
+private:
+  ClipIdMap mClipIdCache;
 
   // Layers that have been mutated. If we have an empty transaction
   // then a display item layer will no longer be valid
@@ -303,6 +321,10 @@ private:
   typedef nsTHashtable<nsRefPtrHashKey<WebRenderCanvasData>> CanvasDataSet;
   // Store of WebRenderCanvasData objects for use in empty transactions
   CanvasDataSet mLastCanvasDatas;
+
+  // True if the layers-free transaction has invalidation region and then
+  // we should send notification after EndTransaction
+  bool mShouldNotifyInvalidation;
 };
 
 } // namespace layers

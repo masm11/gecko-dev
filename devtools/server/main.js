@@ -17,7 +17,7 @@ var { LocalDebuggerTransport, ChildDebuggerTransport, WorkerDebuggerTransport } 
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn, dumpv } = DevToolsUtils;
 var flags = require("devtools/shared/flags");
-var EventEmitter = require("devtools/shared/event-emitter");
+var EventEmitter = require("devtools/shared/old-event-emitter");
 var SyncPromise = require("devtools/shared/deprecated-sync-thenables");
 
 DevToolsUtils.defineLazyGetter(this, "DebuggerSocket", () => {
@@ -86,7 +86,7 @@ function loadSubScript(url) {
   }
 }
 
-loader.lazyRequireGetter(this, "events", "sdk/event/core");
+loader.lazyRequireGetter(this, "events", "devtools/shared/event-emitter");
 
 var gRegisteredModules = Object.create(null);
 

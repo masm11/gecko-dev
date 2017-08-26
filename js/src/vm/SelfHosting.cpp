@@ -355,6 +355,50 @@ intrinsic_ThrowInternalError(JSContext* cx, unsigned argc, Value* vp)
     return false;
 }
 
+static bool
+intrinsic_GetErrorMessage(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 1);
+    MOZ_ASSERT(args[0].isInt32());
+
+    const JSErrorFormatString* errorString = GetErrorMessage(nullptr, args[0].toInt32());
+    MOZ_ASSERT(errorString);
+
+    MOZ_ASSERT(errorString->argCount == 0);
+    RootedString message(cx, JS_NewStringCopyZ(cx, errorString->format));
+    if (!message)
+        return false;
+
+    args.rval().setString(message);
+    return true;
+}
+
+static bool
+intrinsic_CreateModuleSyntaxError(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 4);
+    MOZ_ASSERT(args[0].isObject());
+    MOZ_ASSERT(args[1].isInt32());
+    MOZ_ASSERT(args[2].isInt32());
+    MOZ_ASSERT(args[3].isString());
+
+    RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+    RootedString filename(cx, JS_NewStringCopyZ(cx, module->script()->filename()));
+    RootedString message(cx, args[3].toString());
+
+    RootedValue error(cx);
+    if (!JS::CreateError(cx, JSEXN_SYNTAXERR, nullptr, filename, args[1].toInt32(),
+                         args[2].toInt32(), nullptr, message, &error))
+    {
+        return false;
+    }
+
+    args.rval().set(error);
+    return true;
+}
+
 /**
  * Handles an assertion failure in self-hosted code just like an assertion
  * failure in C++ code. Information about the failure can be provided in args[0].
@@ -1530,39 +1574,26 @@ static bool
 intrinsic_RegExpGetSubstitution(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 5);
 
-    MOZ_ASSERT(args.length() == 6);
+    RootedObject matchResult(cx, &args[0].toObject());
 
-    RootedString matched(cx, args[0].toString());
-    RootedString string(cx, args[1].toString());
+    RootedLinearString string(cx, args[1].toString()->ensureLinear(cx));
+    if (!string)
+        return false;
 
     int32_t position = int32_t(args[2].toNumber());
     MOZ_ASSERT(position >= 0);
 
-    RootedObject captures(cx, &args[3].toObject());
-#ifdef DEBUG
-    bool isArray = false;
-    MOZ_ALWAYS_TRUE(IsArray(cx, captures, &isArray));
-    MOZ_ASSERT(isArray);
-#endif
+    RootedLinearString replacement(cx, args[3].toString()->ensureLinear(cx));
+    if (!replacement)
+        return false;
 
-    RootedString replacement(cx, args[4].toString());
-
-    int32_t firstDollarIndex = int32_t(args[5].toNumber());
+    int32_t firstDollarIndex = int32_t(args[4].toNumber());
     MOZ_ASSERT(firstDollarIndex >= 0);
 
-    RootedLinearString matchedLinear(cx, matched->ensureLinear(cx));
-    if (!matchedLinear)
-        return false;
-    RootedLinearString stringLinear(cx, string->ensureLinear(cx));
-    if (!stringLinear)
-        return false;
-    RootedLinearString replacementLinear(cx, replacement->ensureLinear(cx));
-    if (!replacementLinear)
-        return false;
-
-    return RegExpGetSubstitution(cx, matchedLinear, stringLinear, size_t(position), captures,
-                                 replacementLinear, size_t(firstDollarIndex), args.rval());
+    return RegExpGetSubstitution(cx, matchResult, string, size_t(position), replacement,
+                                 size_t(firstDollarIndex), args.rval());
 }
 
 static bool
@@ -1995,24 +2026,12 @@ intrinsic_InstantiateModuleFunctionDeclarations(JSContext* cx, unsigned argc, Va
 }
 
 static bool
-intrinsic_SetModuleState(JSContext* cx, unsigned argc, Value* vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    MOZ_ASSERT(args.length() == 2);
-    RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
-    ModuleState newState = args[1].toInt32();
-    module->setState(newState);
-    args.rval().setUndefined();
-    return true;
-}
-
-static bool
-intrinsic_EvaluateModule(JSContext* cx, unsigned argc, Value* vp)
+intrinsic_ExecuteModule(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     MOZ_ASSERT(args.length() == 1);
     RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
-    return ModuleObject::evaluate(cx, module, args.rval());
+    return ModuleObject::execute(cx, module, args.rval());
 }
 
 static bool
@@ -2173,9 +2192,9 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_INLINABLE_FN("std_Array_shift",           array_shift,                  0,0, ArrayShift),
     JS_FN("std_Array_unshift",                   array_unshift,                1,0),
     JS_INLINABLE_FN("std_Array_slice",           array_slice,                  2,0, ArraySlice),
-    JS_FN("std_Array_sort",                      array_sort,                   1,0),
     JS_FN("std_Array_reverse",                   array_reverse,                0,0),
     JS_FNINFO("std_Array_splice",                array_splice, &array_splice_info, 2,0),
+    JS_FN("ArrayNativeSort",                     intrinsic_ArrayNativeSort,    1,0),
 
     JS_FN("std_Date_now",                        date_now,                     0,0),
     JS_FN("std_Date_valueOf",                    date_valueOf,                 0,0),
@@ -2270,6 +2289,8 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("ThrowTypeError",          intrinsic_ThrowTypeError,          4,0),
     JS_FN("ThrowSyntaxError",        intrinsic_ThrowSyntaxError,        4,0),
     JS_FN("ThrowInternalError",      intrinsic_ThrowInternalError,      4,0),
+    JS_FN("GetErrorMessage",         intrinsic_GetErrorMessage,         1,0),
+    JS_FN("CreateModuleSyntaxError", intrinsic_CreateModuleSyntaxError, 4,0),
     JS_FN("AssertionFailed",         intrinsic_AssertionFailed,         1,0),
     JS_FN("DumpMessage",             intrinsic_DumpMessage,             1,0),
     JS_FN("OwnPropertyKeys",         intrinsic_OwnPropertyKeys,         1,0),
@@ -2549,7 +2570,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
                     RegExpPrototypeOptimizable),
     JS_INLINABLE_FN("RegExpInstanceOptimizable", RegExpInstanceOptimizable, 1,0,
                     RegExpInstanceOptimizable),
-    JS_FN("RegExpGetSubstitution", intrinsic_RegExpGetSubstitution, 6,0),
+    JS_FN("RegExpGetSubstitution", intrinsic_RegExpGetSubstitution, 5,0),
     JS_FN("GetElemBaseForLambda", intrinsic_GetElemBaseForLambda, 1,0),
     JS_FN("GetStringDataProperty", intrinsic_GetStringDataProperty, 2,0),
     JS_INLINABLE_FN("GetFirstDollarIndex", GetFirstDollarIndex, 1,0,
@@ -2579,8 +2600,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("CreateNamespaceBinding", intrinsic_CreateNamespaceBinding, 3, 0),
     JS_FN("InstantiateModuleFunctionDeclarations",
           intrinsic_InstantiateModuleFunctionDeclarations, 1, 0),
-    JS_FN("SetModuleState", intrinsic_SetModuleState, 1, 0),
-    JS_FN("EvaluateModule", intrinsic_EvaluateModule, 1, 0),
+    JS_FN("ExecuteModule", intrinsic_ExecuteModule, 1, 0),
     JS_FN("NewModuleNamespace", intrinsic_NewModuleNamespace, 2, 0),
     JS_FN("AddModuleNamespaceBinding", intrinsic_AddModuleNamespaceBinding, 4, 0),
     JS_FN("ModuleNamespaceExports", intrinsic_ModuleNamespaceExports, 1, 0),
@@ -2617,7 +2637,7 @@ js::FillSelfHostingCompileOptions(CompileOptions& options)
     options.setFileAndLine("self-hosted", 1);
     options.setSelfHostingMode(true);
     options.setCanLazilyParse(false);
-    options.setVersion(JSVERSION_LATEST);
+    options.setVersion(JSVERSION_DEFAULT);
     options.werrorOption = true;
     options.strictOption = true;
 
@@ -2643,7 +2663,7 @@ JSRuntime::createSelfHostingGlobal(JSContext* cx)
     static const ClassOps shgClassOps = {
         nullptr, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr,
         JS_GlobalObjectTraceHook
     };
 

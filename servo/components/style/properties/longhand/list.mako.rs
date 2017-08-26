@@ -30,7 +30,7 @@ ${helpers.single_keyword("list-style-position", "outside inside", animation_valu
         animation_value_type="discrete",
         spec="https://drafts.csswg.org/css-lists/#propdef-list-style-type")}
 % else:
-    <%helpers:longhand name="list-style-type" animation_value_type="none" boxed="True"
+    <%helpers:longhand name="list-style-type" animation_value_type="discrete" boxed="True"
                        spec="https://drafts.csswg.org/css-lists/#propdef-list-style-type">
         use values::CustomIdent;
         use values::computed::ComputedValueAsSpecified;
@@ -42,7 +42,7 @@ ${helpers.single_keyword("list-style-position", "outside inside", animation_valu
             use values::generics::CounterStyleOrNone;
 
             /// <counter-style> | <string> | none
-            #[derive(Debug, Clone, Eq, PartialEq, ToCss)]
+            #[derive(Clone, Debug, Eq, PartialEq, ToCss)]
             pub enum T {
                 CounterStyle(CounterStyleOrNone),
                 String(String),
@@ -110,7 +110,7 @@ ${helpers.single_keyword("list-style-position", "outside inside", animation_valu
         use values::specified::UrlOrNone;
 
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-        #[derive(Debug, Clone, PartialEq, ToCss)]
+        #[derive(Clone, Debug, PartialEq, ToCss)]
         pub struct T(pub UrlOrNone);
     }
 
@@ -151,7 +151,7 @@ ${helpers.single_keyword("list-style-position", "outside inside", animation_valu
     pub use self::computed_value::T as SpecifiedValue;
 
     pub mod computed_value {
-        #[derive(Debug, Clone, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub Vec<(String,String)>);
     }

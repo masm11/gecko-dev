@@ -24,9 +24,7 @@ struct CachedOffsetForFrame;
 class nsAutoScrollTimer;
 class nsIContentIterator;
 class nsIDocument;
-class nsIEditor;
 class nsIFrame;
-class nsIHTMLEditor;
 class nsFrameSelection;
 class nsPIDOMWindowOuter;
 struct SelectionDetails;
@@ -36,6 +34,7 @@ class nsHTMLCopyEncoder;
 
 namespace mozilla {
 class ErrorResult;
+class HTMLEditor;
 struct AutoPrepareFocusRange;
 } // namespace mozilla
 
@@ -143,12 +142,9 @@ public:
   void         ReplaceAnchorFocusRange(nsRange *aRange);
   void         AdjustAnchorFocusForMultiRange(nsDirection aDirection);
 
-  //  NS_IMETHOD   GetPrimaryFrameForRangeEndpoint(nsIDOMNode* aContainer,
-  //                                               int32_t aOffset,
-  //                                               bool aIsEndNode,
-  //                                               nsIFrame** aResultFrame);
-  NS_IMETHOD   GetPrimaryFrameForAnchorNode(nsIFrame **aResultFrame);
-  NS_IMETHOD   GetPrimaryFrameForFocusNode(nsIFrame **aResultFrame, int32_t *aOffset, bool aVisual);
+  nsresult GetPrimaryFrameForAnchorNode(nsIFrame** aReturnFrame);
+  nsresult GetPrimaryFrameForFocusNode(nsIFrame** aReturnFrame,
+                                       int32_t* aOffset, bool aVisual);
 
   UniquePtr<SelectionDetails> LookUpSelection(
     nsIContent* aContent,
@@ -175,7 +171,22 @@ public:
   nsINode*     GetFocusNode();
   uint32_t     FocusOffset();
 
-  bool IsCollapsed() const;
+  /*
+   * IsCollapsed -- is the whole selection just one point, or unset?
+   */
+  bool IsCollapsed() const
+  {
+    uint32_t cnt = mRanges.Length();
+    if (cnt == 0) {
+      return true;
+    }
+
+    if (cnt != 1) {
+      return false;
+    }
+
+    return mRanges[0].mRange->Collapsed();
+  }
 
   // *JS() methods are mapped to Selection.*().
   // They may move focus only when the range represents normal selection.
@@ -276,17 +287,38 @@ public:
   void AddSelectionChangeBlocker();
   void RemoveSelectionChangeBlocker();
   bool IsBlockingSelectionChangeEvents() const;
+
+  /**
+   * Set the painting style for the range. The range must be a range in
+   * the selection. The textRangeStyle will be used by text frame
+   * when it is painting the selection.
+   */
+  nsresult SetTextRangeStyle(nsRange* aRange,
+                             const TextRangeStyle& aTextRangeStyle);
+
 private:
   friend class ::nsAutoScrollTimer;
 
   // Note: DoAutoScroll might destroy arbitrary frames etc.
   nsresult DoAutoScroll(nsIFrame *aFrame, nsPoint& aPoint);
 
+  // We are not allowed to be in nodes whose root is not our document
+  bool HasSameRoot(nsINode& aNode);
+
   // XXX Please don't add additional uses of this method, it's only for
   // XXX supporting broken code (bug 1245883) in the following classes:
   friend class ::nsCopySupport;
   friend class ::nsHTMLCopyEncoder;
   void AddRangeInternal(nsRange& aRange, nsIDocument* aDocument, ErrorResult&);
+
+  // This is helper method for GetPrimaryFrameForFocusNode.
+  // If aVisual is true, this returns caret frame.
+  // If false, this returns primary frame.
+  nsresult GetPrimaryOrCaretFrameForNodeOffset(nsIContent* aContent,
+                                               uint32_t aOffset,
+                                               nsIFrame** aReturnFrame,
+                                               int32_t* aOffsetUsed,
+                                               bool aVisual) const;
 
 public:
   SelectionType GetType() const { return mSelectionType; }
@@ -390,7 +422,7 @@ private:
 
   nsIDocument* GetDocument() const;
   nsPIDOMWindowOuter* GetWindow() const;
-  nsIEditor* GetEditor() const;
+  HTMLEditor* GetHTMLEditor() const;
 
   /**
    * GetCommonEditingHostForAllRanges() returns common editing host of all

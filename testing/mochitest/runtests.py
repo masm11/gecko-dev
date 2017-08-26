@@ -1809,15 +1809,15 @@ toolbar#nav-bar {
         except AttributeError:
             pass
         try:
-            if options.topsrcdir:
-                sandbox_whitelist_paths.append(options.topsrcdir)
+            if options.objPath:
+                sandbox_whitelist_paths.append(options.objPath)
         except AttributeError:
             pass
-        if platform.system() == "Linux":
-            # Trailing slashes are needed to indicate directories on Linux
-            for idx, path in enumerate(sandbox_whitelist_paths):
-                if not path.endswith("/"):
-                    sandbox_whitelist_paths[idx] = path + "/"
+        if (platform.system() == "Linux" or
+            platform.system() in ("Windows", "Microsoft")):
+            # Trailing slashes are needed to indicate directories on Linux and Windows
+            sandbox_whitelist_paths = map(lambda p: os.path.join(p, ""),
+                                          sandbox_whitelist_paths)
 
         # interpolate preferences
         interpolation = {
@@ -2162,11 +2162,10 @@ toolbar#nav-bar {
             # install specialpowers and mochikit addons
             addons = Addons(self.marionette)
 
-            if mozinfo.info.get('toolkit') != 'gonk':
-                addons.install(create_zip(
-                    os.path.join(here, 'extensions', 'specialpowers')
-                ))
-                addons.install(create_zip(self.mochijar))
+            addons.install(create_zip(
+                os.path.join(here, 'extensions', 'specialpowers')
+            ))
+            addons.install(create_zip(self.mochijar))
 
             self.execute_start_script()
 
@@ -2354,39 +2353,12 @@ toolbar#nav-bar {
                     break
             return result
 
-        def step3():
-            stepOptions = copy.deepcopy(options)
-            stepOptions.repeat = VERIFY_REPEAT
-            stepOptions.keep_open = False
-            stepOptions.environment.append("MOZ_CHAOSMODE=")
-            result = self.runTests(stepOptions)
-            self.message_logger.finish()
-            return result
-
-        def step4():
-            stepOptions = copy.deepcopy(options)
-            stepOptions.repeat = 0
-            stepOptions.keep_open = False
-            stepOptions.environment.append("MOZ_CHAOSMODE=")
-            for i in xrange(VERIFY_REPEAT_SINGLE_BROWSER):
-                result = self.runTests(stepOptions)
-                self.message_logger.finish()
-                if result != 0:
-                    break
-            return result
-
         steps = [
             ("1. Run each test %d times in one browser." % VERIFY_REPEAT,
              step1),
             ("2. Run each test %d times in a new browser each time." %
              VERIFY_REPEAT_SINGLE_BROWSER,
              step2),
-            ("3. Run each test %d times in one browser, in chaos mode." %
-             VERIFY_REPEAT,
-             step3),
-            ("4. Run each test %d times in a new browser each time, "
-             "in chaos mode." % VERIFY_REPEAT_SINGLE_BROWSER,
-             step4),
         ]
 
         stepResults = {}
@@ -2465,7 +2437,7 @@ toolbar#nav-bar {
         for m in sorted(manifests):
             self.log.info("Running manifest: {}".format(m))
 
-            prefs = self.prefs_by_manifest[m].pop()
+            prefs = list(self.prefs_by_manifest[m])[0]
             options.extraPrefs = origPrefs[:]
             if prefs:
                 prefs = prefs.strip().split()

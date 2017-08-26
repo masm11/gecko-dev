@@ -10,9 +10,9 @@
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "nsCaseTreatment.h" // for enum, cannot be forward-declared
 #include "nsINode.h"
+#include "nsStringFwd.h"
 
 // Forward declarations
-class nsAString;
 class nsIAtom;
 class nsIURI;
 class nsRuleWalker;
@@ -979,6 +979,7 @@ public:
   virtual void RemovePurple() = 0;
 
   virtual bool OwnedOnlyByTheDOMTree() { return false; }
+
 protected:
   /**
    * Hook for implementing GetID.  This is guaranteed to only be

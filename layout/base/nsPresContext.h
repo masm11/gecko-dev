@@ -17,6 +17,7 @@
 #include "nsCOMPtr.h"
 #include "nsIPresShell.h"
 #include "nsRect.h"
+#include "nsStringFwd.h"
 #include "nsFont.h"
 #include "gfxFontConstants.h"
 #include "nsIAtom.h"
@@ -46,7 +47,6 @@
 #include "mozilla/StaticPresData.h"
 #include "mozilla/StyleBackendType.h"
 
-class nsAString;
 class nsBidi;
 class nsIPrintSettings;
 class nsDocShell;
@@ -702,8 +702,8 @@ public:
   gfxRect AppUnitsToGfxUnits(const nsRect& aAppRect) const
   { return gfxRect(AppUnitsToGfxUnits(aAppRect.x),
                    AppUnitsToGfxUnits(aAppRect.y),
-                   AppUnitsToGfxUnits(aAppRect.width),
-                   AppUnitsToGfxUnits(aAppRect.height)); }
+                   AppUnitsToGfxUnits(aAppRect.Width()),
+                   AppUnitsToGfxUnits(aAppRect.Height())); }
 
   static nscoord CSSTwipsToAppUnits(float aTwips)
   { return NSToCoordRoundWithClamp(

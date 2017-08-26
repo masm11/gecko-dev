@@ -405,6 +405,9 @@ public:
   void Thaw();
   virtual bool IsFrozen() const override;
   void SyncStateFromParentWindow();
+  void AddPeerConnection();
+  void RemovePeerConnection();
+  bool HasActivePeerConnections();
 
   virtual nsresult FireDelayedDOMEvents() override;
 
@@ -716,7 +719,7 @@ public:
     return sWindowsById;
   }
 
-  void AddSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const;
+  void AddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const;
 
   // Inner windows only.
   void AddEventTargetObject(mozilla::DOMEventTargetHelper* aObject);
@@ -737,9 +740,10 @@ public:
     ContinueSlowScript = 0,
     ContinueSlowScriptAndKeepNotifying,
     AlwaysContinueSlowScript,
-    KillSlowScript
+    KillSlowScript,
+    KillScriptGlobal
   };
-  SlowScriptResponse ShowSlowScriptDialog();
+  SlowScriptResponse ShowSlowScriptDialog(const nsString& aAddonId);
 
   // Inner windows only.
   void AddGamepad(uint32_t aIndex, mozilla::dom::Gamepad* aGamepad);

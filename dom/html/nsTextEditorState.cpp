@@ -1568,8 +1568,9 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
       editorFlags |= nsIPlaintextEditor::eEditorDisabledMask;
 
     // Disable the selection if necessary.
-    if (editorFlags & nsIPlaintextEditor::eEditorDisabledMask)
+    if (newTextEditor->IsDisabled()) {
       mSelCon->SetDisplaySelection(nsISelectionController::SELECTION_OFF);
+    }
 
     newTextEditor->SetFlags(editorFlags);
   }
@@ -2358,6 +2359,7 @@ nsTextEditorState::CreateEmptyDivNode()
 
   // Create the text node for DIV
   RefPtr<nsTextNode> textNode = new nsTextNode(pNodeInfoManager);
+  textNode->MarkAsMaybeModifiedFrequently();
 
   element->AppendChildTo(textNode, false);
 
@@ -2572,7 +2574,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, const nsAString* aOldValue,
         mValueBeingSet = aValue;
         mIsCommittingComposition = true;
         RefPtr<TextEditor> textEditor = mTextEditor;
-        nsresult rv = textEditor->ForceCompositionEnd();
+        nsresult rv = textEditor->CommitComposition();
         if (!self.get()) {
           return true;
         }
@@ -2793,7 +2795,7 @@ nsTextEditorState::HasNonEmptyValue()
   if (mTextEditor && mBoundFrame && mEditorInitialized &&
       !mIsCommittingComposition) {
     bool empty;
-    nsresult rv = mTextEditor->GetDocumentIsEmpty(&empty);
+    nsresult rv = mTextEditor->DocumentIsEmpty(&empty);
     if (NS_SUCCEEDED(rv)) {
       return !empty;
     }

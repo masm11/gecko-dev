@@ -170,7 +170,7 @@ pub trait Parser<'i> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectorList<Impl: SelectorImpl>(pub Vec<Selector<Impl>>);
 
 impl<Impl: SelectorImpl> SelectorList<Impl> {
@@ -206,7 +206,7 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
 /// off the upper bits) at the expense of making the fourth somewhat more
 /// complicated to assemble, because we often bail out before checking all the
 /// hashes.
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AncestorHashes {
     pub packed_hashes: [u32; 3],
 }
@@ -272,7 +272,7 @@ impl<Impl: SelectorImpl> SelectorMethods for Selector<Impl> {
         let mut current = self.iter();
         let mut combinator = None;
         loop {
-            if !visitor.visit_complex_selector(current.clone(), combinator) {
+            if !visitor.visit_complex_selector(combinator) {
                 return false;
             }
 
@@ -575,7 +575,7 @@ impl<'a, Impl: SelectorImpl> Iterator for AncestorIter<'a, Impl> {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Combinator {
     Child,  //  >
     Descendant,  // space
@@ -613,7 +613,7 @@ impl Combinator {
 /// optimal packing and cache performance, see [1].
 ///
 /// [1] https://bugzilla.mozilla.org/show_bug.cgi?id=1357973
-#[derive(Eq, PartialEq, Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Component<Impl: SelectorImpl> {
     Combinator(Combinator),
 
@@ -712,7 +712,7 @@ impl<Impl: SelectorImpl> Component<Impl> {
     }
 }
 
-#[derive(Eq, PartialEq, Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct LocalName<Impl: SelectorImpl> {
     pub name: Impl::LocalName,
     pub lower_name: Impl::LocalName,
@@ -1050,7 +1050,7 @@ fn parse_selector<'i, 't, P, E, Impl>(
         let combinator;
         let mut any_whitespace = false;
         loop {
-            let position = input.position();
+            let before_this_token = input.state();
             match input.next_including_whitespace() {
                 Err(_e) => break 'outer_loop,
                 Ok(&Token::WhiteSpace(_)) => any_whitespace = true,
@@ -1067,7 +1067,7 @@ fn parse_selector<'i, 't, P, E, Impl>(
                     break
                 }
                 Ok(_) => {
-                    input.reset(position);
+                    input.reset(&before_this_token);
                     if any_whitespace {
                         combinator = Combinator::Descendant;
                         break
@@ -1207,11 +1207,11 @@ fn parse_qualified_name<'i, 't, P, E, Impl>
         }
     };
 
-    let position = input.position();
+    let start = input.state();
     // FIXME: remove clone() when lifetimes are non-lexical
     match input.next_including_whitespace().map(|t| t.clone()) {
         Ok(Token::Ident(value)) => {
-            let position = input.position();
+            let after_ident = input.state();
             match input.next_including_whitespace() {
                 Ok(&Token::Delim('|')) => {
                     let prefix = value.as_ref().into();
@@ -1221,7 +1221,7 @@ fn parse_qualified_name<'i, 't, P, E, Impl>
                     explicit_namespace(input, QNamePrefix::ExplicitNamespace(prefix, url))
                 },
                 _ => {
-                    input.reset(position);
+                    input.reset(&after_ident);
                     if in_attr_selector {
                         Ok(Some((QNamePrefix::ImplicitNoNamespace, Some(value))))
                     } else {
@@ -1231,14 +1231,14 @@ fn parse_qualified_name<'i, 't, P, E, Impl>
             }
         },
         Ok(Token::Delim('*')) => {
-            let position = input.position();
+            let after_star = input.state();
             // FIXME: remove clone() when lifetimes are non-lexical
             match input.next_including_whitespace().map(|t| t.clone()) {
                 Ok(Token::Delim('|')) => {
                     explicit_namespace(input, QNamePrefix::ExplicitAnyNamespace)
                 }
                 result => {
-                    input.reset(position);
+                    input.reset(&after_star);
                     if in_attr_selector {
                         match result {
                             Ok(t) => Err(ParseError::Basic(BasicParseError::UnexpectedToken(t))),
@@ -1254,7 +1254,7 @@ fn parse_qualified_name<'i, 't, P, E, Impl>
             explicit_namespace(input, QNamePrefix::ExplicitNoNamespace)
         }
         _ => {
-            input.reset(position);
+            input.reset(&start);
             Ok(None)
         }
     }
@@ -1427,9 +1427,9 @@ fn parse_negation<'i, 't, P, E, Impl>(parser: &P,
 
     // Consume any leading whitespace.
     loop {
-        let position = input.position();
+        let before_this_token = input.state();
         if !matches!(input.next_including_whitespace(), Ok(&Token::WhiteSpace(_))) {
-            input.reset(position);
+            input.reset(&before_this_token);
             break
         }
     }
@@ -1464,15 +1464,15 @@ fn parse_negation<'i, 't, P, E, Impl>(parser: &P,
 fn parse_compound_selector<'i, 't, P, E, Impl>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
-    mut builder: &mut SelectorBuilder<Impl>)
+    builder: &mut SelectorBuilder<Impl>)
     -> Result<bool, ParseError<'i, SelectorParseError<'i, E>>>
     where P: Parser<'i, Impl=Impl, Error=E>, Impl: SelectorImpl
 {
     // Consume any leading whitespace.
     loop {
-        let position = input.position();
+        let before_this_token = input.state();
         if !matches!(input.next_including_whitespace(), Ok(&Token::WhiteSpace(_))) {
-            input.reset(position);
+            input.reset(&before_this_token);
             break
         }
     }
@@ -1604,7 +1604,7 @@ fn parse_one_simple_selector<'i, 't, P, E, Impl>(parser: &P,
                                                            ParseError<'i, SelectorParseError<'i, E>>>
     where P: Parser<'i, Impl=Impl, Error=E>, Impl: SelectorImpl
 {
-    let start_position = input.position();
+    let start = input.state();
     // FIXME: remove clone() when lifetimes are non-lexical
     match input.next_including_whitespace().map(|t| t.clone()) {
         Ok(Token::IDHash(id)) => {
@@ -1657,7 +1657,7 @@ fn parse_one_simple_selector<'i, 't, P, E, Impl>(parser: &P,
             }
         }
         _ => {
-            input.reset(start_position);
+            input.reset(&start);
             Ok(None)
         }
     }
@@ -1694,14 +1694,14 @@ pub mod tests {
     use std::fmt;
     use super::*;
 
-    #[derive(PartialEq, Clone, Debug, Eq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub enum PseudoClass {
         Hover,
         Active,
         Lang(String),
     }
 
-    #[derive(Eq, PartialEq, Clone, Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub enum PseudoElement {
         Before,
         After,
@@ -1749,7 +1749,7 @@ pub mod tests {
             where V: SelectorVisitor<Impl = Self::Impl> { true }
     }
 
-    #[derive(Clone, PartialEq, Debug)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct DummySelectorImpl;
 
     #[derive(Default)]
@@ -1786,7 +1786,7 @@ pub mod tests {
         }
     }
 
-    #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
     pub struct DummyAtom(String);
 
     impl fmt::Display for DummyAtom {

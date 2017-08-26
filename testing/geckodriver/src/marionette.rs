@@ -45,9 +45,9 @@ use webdriver::command::{
     GetNamedCookieParameters, AddCookieParameters, TimeoutsParameters,
     ActionsParameters, TakeScreenshotParameters};
 use webdriver::response::{CloseWindowResponse, Cookie, CookieResponse, CookiesResponse,
-                          NewSessionResponse, RectResponse, TimeoutsResponse, ValueResponse,
-                          WebDriverResponse};
-use webdriver::common::{Date, ELEMENT_KEY, FrameId, Nullable, WebElement};
+                          ElementRectResponse, NewSessionResponse, TimeoutsResponse,
+                          ValueResponse, WebDriverResponse, WindowRectResponse};
+use webdriver::common::{Date, ELEMENT_KEY, FrameId, Nullable, WebElement, WindowState};
 use webdriver::error::{ErrorStatus, WebDriverError, WebDriverResult};
 use webdriver::server::{WebDriverHandler, Session};
 use webdriver::httpapi::{WebDriverExtensionRoute};
@@ -451,6 +451,11 @@ impl MarionetteHandler {
         // double-dashed flags are not accepted on Windows systems
         runner.args().push("-marionette".to_owned());
 
+        // https://developer.mozilla.org/docs/Environment_variables_affecting_crash_reporting
+        runner.envs().insert("MOZ_CRASHREPORTER".to_string(), "1".to_string());
+        runner.envs().insert("MOZ_CRASHREPORTER_NO_REPORT".to_string(), "1".to_string());
+        runner.envs().insert("MOZ_CRASHREPORTER_SHUTDOWN".to_string(), "1".to_string());
+
         if let Some(args) = options.args.take() {
             runner.args().extend(args);
         };
@@ -548,7 +553,16 @@ impl WebDriverHandler<GeckoExtensionRoute> for MarionetteHandler {
         match self.connection.lock() {
             Ok(ref mut connection) => {
                 match connection.as_mut() {
-                    Some(conn) => conn.send_command(resolved_capabilities, &msg),
+                    Some(conn) => {
+                        conn.send_command(resolved_capabilities, &msg)
+                            .map_err(|mut err| {
+                                // Shutdown the browser if no session can
+                                // be established due to errors.
+                                if let NewSession(_) = msg.command {
+                                    err.delete_session=true;
+                                }
+                                err})
+                    },
                     None => panic!("Connection missing")
                 }
             },
@@ -757,7 +771,8 @@ impl MarionetteSession {
                     ErrorStatus::UnknownError,
                     "Failed to interpret width as float");
 
-                WebDriverResponse::ElementRect(RectResponse::new(x, y, width, height))
+                let rect = ElementRectResponse { x, y, width, height };
+                WebDriverResponse::ElementRect(rect)
             },
             FullscreenWindow | MinimizeWindow | MaximizeWindow | GetWindowRect |
             SetWindowRect(_) => {
@@ -789,7 +804,13 @@ impl MarionetteSession {
                     ErrorStatus::UnknownError,
                     "Failed to interpret y as float");
 
-                WebDriverResponse::WindowRect(RectResponse::new(x, y, width, height))
+                let state = match resp.result.find("state") {
+                    Some(json) => WindowState::from_json(json)?,
+                    None => WindowState::Normal,
+                };
+
+                let rect = WindowRectResponse { x, y, width, height, state };
+                WebDriverResponse::WindowRect(rect)
             },
             GetCookies => {
                 let cookies = try!(self.process_cookies(&resp.result));
@@ -1038,7 +1059,7 @@ impl MarionetteCommand {
             GetWindowRect => (Some("getWindowRect"), None),
             MinimizeWindow => (Some("WebDriver:MinimizeWindow"), None),
             MaximizeWindow => (Some("maximizeWindow"), None),
-            FullscreenWindow => (Some("fullscreenWindow"), None),
+            FullscreenWindow => (Some("fullscreen"), None),
             SwitchToWindow(ref x) => (Some("switchToWindow"), Some(x.to_marionette())),
             SwitchToFrame(ref x) => (Some("switchToFrame"), Some(x.to_marionette())),
             SwitchToParentFrame => (Some("switchToParentFrame"), None),

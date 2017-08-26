@@ -257,17 +257,8 @@ protected:
   using Master = MediaDecoderStateMachine;
   explicit StateObject(Master* aPtr) : mMaster(aPtr) { }
   TaskQueue* OwnerThread() const { return mMaster->mTaskQueue; }
-  MediaResource* Resource() const { return mMaster->mResource; }
   ReaderProxy* Reader() const { return mMaster->mReader; }
   const MediaInfo& Info() const { return mMaster->Info(); }
-  bool IsExpectingMoreData() const
-  {
-    // We are expecting more data if either the resource states so, or if we
-    // have a waiting promise pending (such as with non-MSE EME).
-    return Resource()->IsExpectingMoreData()
-           || mMaster->IsWaitingAudioData()
-           || mMaster->IsWaitingVideoData();
-  }
   MediaQueue<AudioData>& AudioQueue() const { return mMaster->mAudioQueue; }
   MediaQueue<VideoData>& VideoQueue() const { return mMaster->mVideoQueue; }
 
@@ -340,9 +331,6 @@ public:
     MOZ_ASSERT(!mMaster->mVideoDecodeSuspended);
     MOZ_ASSERT(!mMetadataRequest.Exists());
     SLOG("Dispatching AsyncReadMetadata");
-
-    // Set mode to METADATA since we are about to read metadata.
-    Resource()->SetReadMode(MediaCacheStream::MODE_METADATA);
 
     // We disconnect mMetadataRequest in Exit() so it is fine to capture
     // a raw pointer here.
@@ -1867,17 +1855,23 @@ public:
 
   void HandleAudioDecoded(AudioData* aAudio) override
   {
+    mMaster->PushAudio(aAudio);
+    if (!mMaster->HaveEnoughDecodedAudio()) {
+      mMaster->RequestAudioData();
+    }
     // This might be the sample we need to exit buffering.
     // Schedule Step() to check it.
-    mMaster->PushAudio(aAudio);
     mMaster->ScheduleStateMachine();
   }
 
   void HandleVideoDecoded(VideoData* aVideo, TimeStamp aDecodeStart) override
   {
+    mMaster->PushVideo(aVideo);
+    if (!mMaster->HaveEnoughDecodedVideo()) {
+      mMaster->RequestVideoData(media::TimeUnit());
+    }
     // This might be the sample we need to exit buffering.
     // Schedule Step() to check it.
-    mMaster->PushVideo(aVideo);
     mMaster->ScheduleStateMachine();
   }
 
@@ -1924,8 +1918,6 @@ public:
   }
 
 private:
-  void DispatchDecodeTasksIfNeeded();
-
   TimeStamp mBufferingStart;
 
   // The maximum number of second we spend buffering when we are short on
@@ -2004,9 +1996,6 @@ public:
         mMaster->mDuration = Some(clockTime);
       }
       mMaster->UpdatePlaybackPosition(clockTime);
-
-      // Ensure readyState is updated before firing the 'ended' event.
-      mMaster->UpdateNextFrameStatus(MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE);
 
       mMaster->mOnPlaybackEvent.Notify(MediaEventType::PlaybackEnded);
 
@@ -2223,9 +2212,6 @@ MediaDecoderStateMachine::
 DecodeMetadataState::OnMetadataRead(MetadataHolder&& aMetadata)
 {
   mMetadataRequest.Complete();
-
-  // Set mode to PLAYBACK after reading metadata.
-  Resource()->SetReadMode(MediaCacheStream::MODE_PLAYBACK);
 
   mMaster->mInfo.emplace(*aMetadata.mInfo);
   mMaster->mMediaSeekable = Info().mMediaSeekable;
@@ -2464,17 +2450,15 @@ DecodingState::MaybeStartBuffering()
     return;
   }
 
-  bool shouldBuffer;
-  if (Reader()->UseBufferingHeuristics()) {
-    shouldBuffer = IsExpectingMoreData()
-                   && mMaster->HasLowDecodedData()
-                   && mMaster->HasLowBufferedData();
-  } else {
-    shouldBuffer =
-      (mMaster->OutOfDecodedAudio() && mMaster->IsWaitingAudioData())
-      || (mMaster->OutOfDecodedVideo() && mMaster->IsWaitingVideoData());
+  // Note we could have a wait promise pending when playing non-MSE EME.
+  if ((mMaster->OutOfDecodedAudio() && mMaster->IsWaitingAudioData()) ||
+      (mMaster->OutOfDecodedVideo() && mMaster->IsWaitingVideoData())) {
+    SetState<BufferingState>();
+    return;
   }
-  if (shouldBuffer) {
+
+  if (Reader()->UseBufferingHeuristics() && mMaster->HasLowDecodedData() &&
+      mMaster->HasLowBufferedData() && !mMaster->mCanPlayThrough) {
     SetState<BufferingState>();
   }
 }
@@ -2485,8 +2469,7 @@ SeekingState::SeekCompleted()
 {
   const auto newCurrentTime = CalculateNewCurrentTime();
 
-  bool isLiveStream = Resource()->IsLiveStream();
-  if (newCurrentTime == mMaster->Duration() && !isLiveStream) {
+  if (newCurrentTime == mMaster->Duration() && !mMaster->mIsLiveStream) {
     // Seeked to end of media. Explicitly finish the queues so DECODING
     // will transition to COMPLETED immediately. Note we don't do
     // this when playing a live stream, since the end of media will advance
@@ -2544,49 +2527,35 @@ SeekingState::SeekCompleted()
 
 void
 MediaDecoderStateMachine::
-BufferingState::DispatchDecodeTasksIfNeeded()
-{
-  if (mMaster->IsAudioDecoding()
-      && !mMaster->HaveEnoughDecodedAudio()
-      && !mMaster->IsRequestingAudioData()
-      && !mMaster->IsWaitingAudioData()) {
-    mMaster->RequestAudioData();
-  }
-
-  if (mMaster->IsVideoDecoding()
-      && !mMaster->HaveEnoughDecodedVideo()
-      && !mMaster->IsRequestingVideoData()
-      && !mMaster->IsWaitingVideoData()) {
-    mMaster->RequestVideoData(media::TimeUnit());
-  }
-}
-
-void
-MediaDecoderStateMachine::
 BufferingState::Step()
 {
   TimeStamp now = TimeStamp::Now();
   MOZ_ASSERT(!mBufferingStart.IsNull(), "Must know buffering start time.");
 
-  // With buffering heuristics we will remain in the buffering state if
-  // we've not decoded enough data to begin playback, or if we've not
-  // downloaded a reasonable amount of data inside our buffering time.
   if (Reader()->UseBufferingHeuristics()) {
+    if (mMaster->IsWaitingAudioData() || mMaster->IsWaitingVideoData()) {
+      // Can't exit buffering when we are still waiting for data.
+      // Note we don't schedule next loop for we will do that when the wait
+      // promise is resolved.
+      return;
+    }
+    // With buffering heuristics, we exit buffering state when we:
+    // 1. can play through or
+    // 2. time out (specified by mBufferingWait) or
+    // 3. have enough buffered data.
     TimeDuration elapsed = now - mBufferingStart;
-    bool isLiveStream = Resource()->IsLiveStream();
-    if ((isLiveStream || !mMaster->mCanPlayThrough)
-        && elapsed
-           < TimeDuration::FromSeconds(mBufferingWait * mMaster->mPlaybackRate)
-        && mMaster->HasLowBufferedData(TimeUnit::FromSeconds(mBufferingWait))
-        && IsExpectingMoreData()) {
+    TimeDuration timeout =
+      TimeDuration::FromSeconds(mBufferingWait * mMaster->mPlaybackRate);
+    bool stopBuffering =
+      mMaster->mCanPlayThrough || elapsed >= timeout ||
+      !mMaster->HasLowBufferedData(TimeUnit::FromSeconds(mBufferingWait));
+    if (!stopBuffering) {
       SLOG("Buffering: wait %ds, timeout in %.3lfs",
            mBufferingWait, mBufferingWait - elapsed.ToSeconds());
       mMaster->ScheduleStateMachineIn(TimeUnit::FromMicroseconds(USECS_PER_S));
-      DispatchDecodeTasksIfNeeded();
       return;
     }
   } else if (mMaster->OutOfDecodedAudio() || mMaster->OutOfDecodedVideo()) {
-    DispatchDecodeTasksIfNeeded();
     MOZ_ASSERT(!mMaster->OutOfDecodedAudio()
                || mMaster->IsRequestingAudioData()
                || mMaster->IsWaitingAudioData());
@@ -2700,7 +2669,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   mAbstractMainThread(aDecoder->AbstractMainThread()),
   mFrameStats(&aDecoder->GetFrameStatistics()),
   mVideoFrameContainer(aDecoder->GetVideoFrameContainer()),
-  mAudioChannel(aDecoder->GetAudioChannel()),
   mTaskQueue(new TaskQueue(
     GetMediaThreadPool(MediaThreadType::PLAYBACK),
     "MDSM::mTaskQueue", /* aSupportsTailDispatch = */ true)),
@@ -2717,7 +2685,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   mVideoDecodeSuspended(false),
   mVideoDecodeSuspendTimer(mTaskQueue),
   mOutputStreamManager(new OutputStreamManager()),
-  mResource(aDecoder->GetResource()),
   mVideoDecodeMode(VideoDecodeMode::Normal),
   mIsMSE(aDecoder->IsMSE()),
   INIT_MIRROR(mBuffered, TimeIntervals()),
@@ -2799,7 +2766,7 @@ MediaDecoderStateMachine::CreateAudioSink()
     AudioSink* audioSink = new AudioSink(
       self->mTaskQueue, self->mAudioQueue,
       self->GetMediaTime(),
-      self->Info().mAudio, self->mAudioChannel);
+      self->Info().mAudio);
 
     self->mAudibleListener = audioSink->AudibleEvent().Connect(
       self->mTaskQueue, self.get(),
@@ -3485,10 +3452,8 @@ MediaDecoderStateMachine::FinishDecodeFirstFrame()
 
   mMediaSink->Redraw(Info().mVideo);
 
-  LOG("Media duration %" PRId64 ", "
-      "transportSeekable=%d, mediaSeekable=%d",
-      Duration().ToMicroseconds(), mResource->IsTransportSeekable(),
-      mMediaSeekable);
+  LOG("Media duration %" PRId64 ", mediaSeekable=%d",
+      Duration().ToMicroseconds(), mMediaSeekable);
 
   // Get potentially updated metadata
   mReader->ReadUpdatedMetadata(mInfo.ptr());

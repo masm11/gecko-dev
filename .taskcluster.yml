@@ -29,7 +29,7 @@ tasks:
             description: 'Created by a [cron task](https://tools.taskcluster.net/tasks/${cron.task_id})'
 
     provisionerId: "aws-provisioner-v1"
-    workerType: "gecko-decision"
+    workerType: "gecko-${repository.level}-decision"
 
     tags:
       $if: 'tasks_for == "hg-push"'
@@ -85,7 +85,7 @@ tasks:
       # exist in tree so we must hard code the hash
       # XXX Changing this will break Chain of Trust without an associated puppet and
       # scriptworker patch!
-      image: 'taskcluster/decision:0.1.8@sha256:195d8439c8e90d59311d877bd2a8964849b2e43bfc6c234092618518d8b2891b'
+      image: 'taskcluster/decision:0.1.9@sha256:9d6a38ff675ba2f2f132bc1461e3a48b0ce56c90617a8a5c5f8c48c6eb8d06e0'
 
       maxRunTime: 1800
 
@@ -126,9 +126,12 @@ tasks:
 
     extra:
       treeherder:
-        $if: 'tasks_for == "hg-push"'
-        then:
-          symbol: D
-        else:
-          groupSymbol: cron
-          symbol: "${cron.job_symbol}"
+        $merge:
+          - machine:
+              platform: gecko-decision
+          - $if: 'tasks_for == "hg-push"'
+            then:
+              symbol: D
+            else:
+              groupSymbol: cron
+              symbol: "${cron.job_symbol}"

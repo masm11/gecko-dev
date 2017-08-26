@@ -29,7 +29,6 @@ XPIDL_SOURCES += [
     'nsINSSVersion.idl',
     'nsIPK11Token.idl',
     'nsIPK11TokenDB.idl',
-    'nsIPKCS11.idl',
     'nsIPKCS11Module.idl',
     'nsIPKCS11ModuleDB.idl',
     'nsIPKCS11Slot.idl',
@@ -134,7 +133,7 @@ UNIFIED_SOURCES += [
     'nsSSLSocketProvider.cpp',
     'nsSSLStatus.cpp',
     'nsTLSSocketProvider.cpp',
-    'PKCS11.cpp',
+    'PKCS11ModuleDB.cpp',
     'PSMContentListener.cpp',
     'PSMRunnable.cpp',
     'PublicKeyPinningService.cpp',
@@ -175,6 +174,13 @@ LOCAL_INCLUDES += [
 LOCAL_INCLUDES += [
     '!/dist/public/nss',
 ]
+
+GENERATED_FILES = [
+    'nsSTSPreloadList.h',
+]
+dafsa_data = GENERATED_FILES['nsSTSPreloadList.h']
+dafsa_data.script = '../../../xpcom/ds/make_dafsa.py'
+dafsa_data.inputs = ['nsSTSPreloadList.inc']
 
 if CONFIG['NSS_DISABLE_DBM']:
     DEFINES['NSS_DISABLE_DBM'] = '1'

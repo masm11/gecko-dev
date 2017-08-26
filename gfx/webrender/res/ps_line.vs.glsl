@@ -1,4 +1,3 @@
-#line 1
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,11 +62,11 @@ void main(void) {
             // Choose some arbitrary values to scale thickness,
             // wave period etc.
             // TODO(gw): Tune these to get closer to what Gecko uses.
-            float thickness = 0.2 * size.y;
+            float thickness = 0.15 * size.y;
             vParams = vec4(thickness,
                            size.y * 0.5,
                            size.y * 0.75,
-                           max(3.0, thickness * 2.0));
+                           size.y * 0.5);
             break;
         }
     }

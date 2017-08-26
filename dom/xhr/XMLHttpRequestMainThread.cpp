@@ -186,6 +186,7 @@ XMLHttpRequestMainThread::XMLHttpRequestMainThread()
     mResponseType(XMLHttpRequestResponseType::_empty),
     mRequestObserver(nullptr),
     mState(State::unsent),
+    mStyleBackend(StyleBackendType::None),
     mFlagSynchronous(false), mFlagAborted(false), mFlagParseBody(false),
     mFlagSyncLooping(false), mFlagBackgroundRequest(false),
     mFlagHadUploadListenersOnSend(false), mFlagACwithCredentials(false),
@@ -381,7 +382,6 @@ XMLHttpRequestMainThread::IsCertainlyAliveForCC() const
 // QueryInterface implementation for XMLHttpRequestMainThread
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(XMLHttpRequestMainThread)
   NS_INTERFACE_MAP_ENTRY(nsIXMLHttpRequest)
-  NS_INTERFACE_MAP_ENTRY(nsIJSXMLHttpRequest)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIChannelEventSink)
@@ -1106,12 +1106,10 @@ XMLHttpRequestMainThread::RequestErrorSteps(const ProgressEventType aEventType,
   FireReadystatechangeEvent();
 
   // Step 6
-  if (mUpload) {
+  if (mUpload && !mUploadComplete) {
 
     // Step 6-1
-    if (!mUploadComplete) {
-      mUploadComplete = true;
-    }
+    mUploadComplete = true;
 
     // Step 6-2
     if (mFlagHadUploadListenersOnSend) {
@@ -1457,7 +1455,8 @@ XMLHttpRequestMainThread::DispatchOrStoreEvent(DOMEventTargetHelper* aTarget,
     return;
   }
 
-  aTarget->DispatchDOMEvent(nullptr, aEvent, nullptr, nullptr);
+  bool dummy;
+  aTarget->DispatchEvent(aEvent, &dummy);
 }
 
 void
@@ -1477,8 +1476,8 @@ XMLHttpRequestMainThread::ResumeEventDispatching()
   pendingEvents.SwapElements(mPendingEvents);
 
   for (uint32_t i = 0; i < pendingEvents.Length(); ++i) {
-    pendingEvents[i].mTarget->
-      DispatchDOMEvent(nullptr, pendingEvents[i].mEvent, nullptr, nullptr);
+    bool dummy;
+    pendingEvents[i].mTarget->DispatchEvent(pendingEvents[i].mEvent, &dummy);
   }
 }
 
@@ -2162,7 +2161,8 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
                            emptyStr, emptyStr, nullptr, docURI,
                            baseURI, requestingPrincipal, true, global,
                            mIsHtml ? DocumentFlavorHTML :
-                                     DocumentFlavorLegacyGuess);
+                                     DocumentFlavorLegacyGuess,
+                           mStyleBackend);
     NS_ENSURE_SUCCESS(rv, rv);
     mResponseXML = do_QueryInterface(responseDoc);
     mResponseXML->SetChromeXHRDocURI(chromeXHRDocURI);
@@ -2900,7 +2900,7 @@ XMLHttpRequestMainThread::Send(nsIVariant* aVariant)
     nsresult rv = aVariant->GetAsJSVal(&realVal);
     if (NS_SUCCEEDED(rv) && !realVal.isPrimitive()) {
       JS::Rooted<JSObject*> obj(rootingCx, realVal.toObjectOrNull());
-      RootedTypedArray<ArrayBuffer> buf(rootingCx);
+      RootedSpiderMonkeyInterface<ArrayBuffer> buf(rootingCx);
       if (buf.Init(obj)) {
         BodyExtractor<const ArrayBuffer> body(&buf);
         return SendInternal(&body);
@@ -2937,6 +2937,61 @@ XMLHttpRequestMainThread::UnsuppressEventHandlingAndResume()
   if (mResumeTimeoutRunnable) {
     DispatchToMainThread(mResumeTimeoutRunnable.forget());
     mResumeTimeoutRunnable = nullptr;
+  }
+}
+
+void
+XMLHttpRequestMainThread::Send(JSContext* aCx,
+                               const Nullable<DocumentOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString>& aData,
+                               ErrorResult& aRv)
+{
+  if (aData.IsNull()) {
+    aRv = SendInternal(nullptr);
+    return;
+  }
+
+
+  if (aData.Value().IsDocument()) {
+    BodyExtractor<nsIDocument> body(&aData.Value().GetAsDocument());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsBlob()) {
+    BodyExtractor<nsIXHRSendable> body(&aData.Value().GetAsBlob());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsArrayBuffer()) {
+    BodyExtractor<const ArrayBuffer> body(&aData.Value().GetAsArrayBuffer());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsArrayBufferView()) {
+    BodyExtractor<const ArrayBufferView>
+      body(&aData.Value().GetAsArrayBufferView());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsFormData()) {
+    BodyExtractor<nsIXHRSendable> body(&aData.Value().GetAsFormData());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsURLSearchParams()) {
+    BodyExtractor<nsIXHRSendable> body(&aData.Value().GetAsURLSearchParams());
+    aRv = SendInternal(&body);
+    return;
+  }
+
+  if (aData.Value().IsUSVString()) {
+    BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
+    aRv = SendInternal(&body);
+    return;
   }
 }
 

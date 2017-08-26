@@ -18,7 +18,7 @@ use super::AllowQuirks;
 use values::computed::{Color as ComputedColor, Context, ToComputedValue};
 
 /// Specified color value
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum Color {
     /// The 'currentColor' keyword
@@ -70,12 +70,12 @@ impl Parse for Color {
         // Currently we only store authored value for color keywords,
         // because all browsers serialize those values as keywords for
         // specified value.
-        let start_position = input.position();
+        let start = input.state();
         let authored = match input.next() {
             Ok(&Token::Ident(ref s)) => Some(s.to_lowercase().into_boxed_str()),
             _ => None,
         };
-        input.reset(start_position);
+        input.reset(&start);
         match input.try(CSSParserColor::parse) {
             Ok(value) =>
                 Ok(match value {

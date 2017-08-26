@@ -10,7 +10,7 @@ use gecko_bindings::bindings::Gecko_AddRefAtom;
 use gecko_bindings::bindings::Gecko_Atomize;
 use gecko_bindings::bindings::Gecko_Atomize16;
 use gecko_bindings::bindings::Gecko_ReleaseAtom;
-use gecko_bindings::structs::nsIAtom;
+use gecko_bindings::structs::{nsIAtom, nsIAtom_AtomKind};
 use nsstring::{nsAString, nsString};
 use precomputed_hash::PrecomputedHash;
 use std::ascii::AsciiExt;
@@ -39,7 +39,7 @@ macro_rules! local_name {
 }
 
 /// A strong reference to a Gecko atom.
-#[derive(PartialEq, Eq)]
+#[derive(Eq, PartialEq)]
 pub struct Atom(*mut WeakAtom);
 
 /// An atom *without* a strong reference.
@@ -149,7 +149,7 @@ impl WeakAtom {
     #[inline]
     pub fn is_static(&self) -> bool {
         unsafe {
-            (*self.as_ptr()).mIsStatic() != 0
+            (*self.as_ptr()).mKind() == nsIAtom_AtomKind::StaticAtom as u32
         }
     }
 

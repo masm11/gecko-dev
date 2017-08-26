@@ -282,9 +282,8 @@ VRDisplayOpenVR::StopPresentation()
 
   mIsPresenting = false;
   Telemetry::Accumulate(Telemetry::WEBVR_USERS_VIEW_IN, 2);
-  Telemetry::Accumulate(Telemetry::WEBVR_TIME_SPEND_FOR_VIEWING_IN_OPENVR,
-                        static_cast<uint32_t>((TimeStamp::Now() - mPresentationStart)
-                        .ToMilliseconds()));
+  Telemetry::AccumulateTimeDelta(Telemetry::WEBVR_TIME_SPENT_VIEWING_IN_OPENVR,
+                                 mPresentationStart);
 }
 
 bool
@@ -306,8 +305,8 @@ VRDisplayOpenVR::SubmitFrame(void* aTextureHandle,
   ::vr::VRTextureBounds_t bounds;
   bounds.uMin = aLeftEyeRect.x;
   bounds.vMin = 1.0 - aLeftEyeRect.y;
-  bounds.uMax = aLeftEyeRect.x + aLeftEyeRect.width;
-  bounds.vMax = 1.0 - aLeftEyeRect.y - aLeftEyeRect.height;
+  bounds.uMax = aLeftEyeRect.x + aLeftEyeRect.Width();
+  bounds.vMax = 1.0 - aLeftEyeRect.y - aLeftEyeRect.Height();
 
   ::vr::EVRCompositorError err;
   err = mVRCompositor->Submit(::vr::EVREye::Eye_Left, &tex, &bounds);
@@ -317,8 +316,8 @@ VRDisplayOpenVR::SubmitFrame(void* aTextureHandle,
 
   bounds.uMin = aRightEyeRect.x;
   bounds.vMin = 1.0 - aRightEyeRect.y;
-  bounds.uMax = aRightEyeRect.x + aRightEyeRect.width;
-  bounds.vMax = 1.0 - aRightEyeRect.y - aRightEyeRect.height;
+  bounds.uMax = aRightEyeRect.x + aRightEyeRect.Width();
+  bounds.vMax = 1.0 - aRightEyeRect.y - aRightEyeRect.Height();
 
   err = mVRCompositor->Submit(::vr::EVREye::Eye_Right, &tex, &bounds);
   if (err != ::vr::EVRCompositorError::VRCompositorError_None) {
@@ -936,7 +935,7 @@ VRSystemManagerOpenVR::StopVibrateHaptic(uint32_t aControllerIdx)
 {
   // mVRSystem is available after VRDisplay is created
   // at GetHMDs().
-  if (!mVRSystem) {
+  if (!mVRSystem || (aControllerIdx >= mOpenVRController.Length())) {
     return;
   }
 

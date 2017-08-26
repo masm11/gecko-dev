@@ -975,6 +975,23 @@ fn read_esds_one_byte_extension_descriptor() {
 }
 
 #[test]
+fn read_esds_byte_extension_descriptor() {
+    let mut stream = make_box(BoxSize::Auto, b"esds", |s| {
+        s.B32(0) // reserved
+         .B16(0x0003)
+         .B16(0x8181)   // extension byte length 0x81
+         .append_repeated(0, 0x81)
+    });
+    let mut iter = super::BoxIter::new(&mut stream);
+    let mut stream = iter.next_box().unwrap().unwrap();
+
+    match super::read_esds(&mut stream) {
+        Ok(_) => (),
+        _ => panic!("fail to parse descriptor extension byte length"),
+    }
+}
+
+#[test]
 fn read_f4v_stsd() {
     let mut stream = make_box(BoxSize::Auto, b".mp3", |s| {
         s.append_repeated(0, 6)
@@ -1060,3 +1077,29 @@ fn unknown_audio_sample_entry() {
         _ => panic!("expected a different error result"),
     }
 }
+
+#[test]
+fn read_esds_invalid_descriptor() {
+    // tag 0x06, 0xff, 0x7f is incorrect.
+    let esds =
+        vec![
+                  0x03, 0x80, 0x80, 0x80, 0x22, 0x00, 0x00,
+            0x00, 0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x01,
+            0x00, 0x04, 0x00, 0x00, 0x00, 0xfa, 0x00, 0x00,
+            0x00, 0xfa, 0x00, 0x05, 0x80, 0x80, 0x80, 0x02,
+            0xe8, 0x35, 0x06, 0xff, 0x7f, 0x00, 0x00, 0x02,
+        ];
+
+    let mut stream = make_box(BoxSize::Auto, b"esds", |s| {
+        s.B32(0) // reserved
+         .append_bytes(esds.as_slice())
+    });
+    let mut iter = super::BoxIter::new(&mut stream);
+    let mut stream = iter.next_box().unwrap().unwrap();
+
+    match super::read_esds(&mut stream) {
+        Err(Error::InvalidData(s)) => assert_eq!(s, "Invalid descriptor."),
+        _ => panic!("unexpected result with invalid descriptor"),
+    }
+}
+

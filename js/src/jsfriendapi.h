@@ -172,6 +172,24 @@ typedef void
 extern JS_FRIEND_API(void)
 JS_SetAccumulateTelemetryCallback(JSContext* cx, JSAccumulateTelemetryDataCallback callback);
 
+/*
+ * Use counter names passed to the accumulate use counter callback.
+ *
+ * It's OK to for these enum values to change as they will be mapped to a
+ * fixed member of the mozilla::UseCounter enum by the callback.
+ */
+
+enum class JSUseCounter {
+    ASMJS,
+    WASM
+};
+
+typedef void
+(*JSSetUseCounterCallback)(JSObject* obj, JSUseCounter counter);
+
+extern JS_FRIEND_API(void)
+JS_SetSetUseCounterCallback(JSContext* cx, JSSetUseCounterCallback callback);
+
 extern JS_FRIEND_API(bool)
 JS_GetIsSecureContext(JSCompartment* compartment);
 
@@ -356,9 +374,9 @@ struct JSFunctionSpecWithHelp {
 };
 
 #define JS_FN_HELP(name,call,nargs,flags,usage,help)                          \
-    {name, call, nargs, (flags) | JSPROP_ENUMERATE | JSFUN_STUB_GSOPS, nullptr, usage, help}
+    {name, call, nargs, (flags) | JSPROP_ENUMERATE, nullptr, usage, help}
 #define JS_INLINABLE_FN_HELP(name,call,nargs,flags,native,usage,help)         \
-    {name, call, nargs, (flags) | JSPROP_ENUMERATE | JSFUN_STUB_GSOPS, &js::jit::JitInfo_##native,\
+    {name, call, nargs, (flags) | JSPROP_ENUMERATE, &js::jit::JitInfo_##native,\
      usage, help}
 #define JS_FS_HELP_END                                                        \
     {nullptr, nullptr, 0, 0, nullptr, nullptr}
@@ -1891,6 +1909,9 @@ UnwrapArrayBufferView(JSObject* obj);
 extern JS_FRIEND_API(JSObject*)
 UnwrapSharedArrayBuffer(JSObject* obj);
 
+extern JS_FRIEND_API(JSObject*)
+UnwrapReadableStream(JSObject* obj);
+
 
 namespace detail {
 
@@ -3057,163 +3078,5 @@ extern JS_FRIEND_API(bool)
 SystemZoneAvailable(JSContext* cx);
 
 } /* namespace js */
-
-class NativeProfiler
-{
-  public:
-    virtual ~NativeProfiler() {};
-    virtual void sampleNative(void* addr, uint32_t size) = 0;
-    virtual void removeNative(void* addr) = 0;
-    virtual void reset() = 0;
-};
-
-class GCHeapProfiler
-{
-  public:
-    virtual ~GCHeapProfiler() {};
-    virtual void sampleTenured(void* addr, uint32_t size) = 0;
-    virtual void sampleNursery(void* addr, uint32_t size) = 0;
-    virtual void markTenuredStart() = 0;
-    virtual void markTenured(void* addr) = 0;
-    virtual void sweepTenured() = 0;
-    virtual void sweepNursery() = 0;
-    virtual void moveNurseryToTenured(void* addrOld, void* addrNew) = 0;
-    virtual void reset() = 0;
-};
-
-class MemProfiler
-{
-    static mozilla::Atomic<uint32_t, mozilla::Relaxed> sActiveProfilerCount;
-    static JS_FRIEND_DATA(NativeProfiler*) sNativeProfiler;
-
-    static GCHeapProfiler* GetGCHeapProfiler(void* addr);
-    static GCHeapProfiler* GetGCHeapProfiler(JSRuntime* runtime);
-
-    static NativeProfiler* GetNativeProfiler() {
-        return sNativeProfiler;
-    }
-
-    GCHeapProfiler* mGCHeapProfiler;
-    JSRuntime* mRuntime;
-
-  public:
-    explicit MemProfiler(JSRuntime* aRuntime) : mGCHeapProfiler(nullptr), mRuntime(aRuntime) {}
-
-    JS_FRIEND_API(void) start(GCHeapProfiler* aGCHeapProfiler);
-    JS_FRIEND_API(void) stop();
-
-    GCHeapProfiler* getGCHeapProfiler() const {
-        return mGCHeapProfiler;
-    }
-
-    static MOZ_ALWAYS_INLINE bool enabled() {
-        return sActiveProfilerCount > 0;
-    }
-
-    static JS_FRIEND_API(MemProfiler*) GetMemProfiler(JSContext* context);
-
-    static void SetNativeProfiler(NativeProfiler* aProfiler) {
-        sNativeProfiler = aProfiler;
-    }
-
-    static MOZ_ALWAYS_INLINE void SampleNative(void* addr, uint32_t size) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        NativeProfiler* profiler = GetNativeProfiler();
-        if (profiler)
-            profiler->sampleNative(addr, size);
-    }
-
-    static MOZ_ALWAYS_INLINE void SampleTenured(void* addr, uint32_t size) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(addr);
-        if (profiler)
-            profiler->sampleTenured(addr, size);
-    }
-
-    static MOZ_ALWAYS_INLINE void SampleNursery(void* addr, uint32_t size) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(addr);
-        if (profiler)
-            profiler->sampleNursery(addr, size);
-    }
-
-    static MOZ_ALWAYS_INLINE void RemoveNative(void* addr) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        NativeProfiler* profiler = GetNativeProfiler();
-        if (profiler)
-            profiler->removeNative(addr);
-    }
-
-    static MOZ_ALWAYS_INLINE void MarkTenuredStart(JSRuntime* runtime) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(runtime);
-        if (profiler)
-            profiler->markTenuredStart();
-    }
-
-    static MOZ_ALWAYS_INLINE void MarkTenured(void* addr) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(addr);
-        if (profiler)
-            profiler->markTenured(addr);
-    }
-
-    static MOZ_ALWAYS_INLINE void SweepTenured(JSRuntime* runtime) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(runtime);
-        if (profiler)
-            profiler->sweepTenured();
-    }
-
-    static MOZ_ALWAYS_INLINE void SweepNursery(JSRuntime* runtime) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(runtime);
-        if (profiler)
-            profiler->sweepNursery();
-    }
-
-    static MOZ_ALWAYS_INLINE void MoveNurseryToTenured(void* addrOld, void* addrNew) {
-        JS::AutoSuppressGCAnalysis nogc;
-
-        if (MOZ_LIKELY(!enabled()))
-            return;
-
-        GCHeapProfiler* profiler = GetGCHeapProfiler(addrOld);
-        if (profiler)
-            profiler->moveNurseryToTenured(addrOld, addrNew);
-    }
-};
 
 #endif /* jsfriendapi_h */

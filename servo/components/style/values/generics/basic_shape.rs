@@ -7,14 +7,15 @@
 
 use std::fmt;
 use style_traits::{HasViewportPercentage, ToCss};
+use values::animated::{Animate, Procedure, ToAnimatedZero};
 use values::computed::ComputedValueAsSpecified;
+use values::distance::{ComputeSquaredDistance, SquaredDistance};
 use values::generics::border::BorderRadius;
 use values::generics::position::Position;
 use values::generics::rect::Rect;
-use values::specified::url::SpecifiedUrl;
 
 /// A clipping shape, for `clip-path`.
-pub type ClippingShape<BasicShape> = ShapeSource<BasicShape, GeometryBox>;
+pub type ClippingShape<BasicShape, Url> = ShapeSource<BasicShape, GeometryBox, Url>;
 
 /// https://drafts.fxtf.org/css-masking-1/#typedef-geometry-box
 #[allow(missing_docs)]
@@ -29,7 +30,7 @@ pub enum GeometryBox {
 impl ComputedValueAsSpecified for GeometryBox {}
 
 /// A float area shape, for `shape-outside`.
-pub type FloatAreaShape<BasicShape> = ShapeSource<BasicShape, ShapeBox>;
+pub type FloatAreaShape<BasicShape, Url> = ShapeSource<BasicShape, ShapeBox, Url>;
 
 // https://drafts.csswg.org/css-shapes-1/#typedef-shape-box
 define_css_keyword_enum!(ShapeBox:
@@ -44,8 +45,8 @@ add_impls_for_keyword_enum!(ShapeBox);
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[derive(Clone, Debug, PartialEq, ToComputedValue, ToCss)]
-pub enum ShapeSource<BasicShape, ReferenceBox> {
-    Url(SpecifiedUrl),
+pub enum ShapeSource<BasicShape, ReferenceBox, Url> {
+    Url(Url),
     Shape(BasicShape, Option<ReferenceBox>),
     Box(ReferenceBox),
     None,
@@ -53,7 +54,8 @@ pub enum ShapeSource<BasicShape, ReferenceBox> {
 
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Debug, PartialEq, ToComputedValue, ToCss)]
+#[derive(Animate, Clone, ComputeSquaredDistance, Debug, PartialEq)]
+#[derive(ToComputedValue, ToCss)]
 pub enum BasicShape<H, V, LengthOrPercentage> {
     Inset(InsetRect<LengthOrPercentage>),
     Circle(Circle<H, V, LengthOrPercentage>),
@@ -64,7 +66,7 @@ pub enum BasicShape<H, V, LengthOrPercentage> {
 /// https://drafts.csswg.org/css-shapes/#funcdef-inset
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Debug, PartialEq, ToComputedValue)]
+#[derive(Animate, Clone, ComputeSquaredDistance, Debug, PartialEq, ToComputedValue)]
 pub struct InsetRect<LengthOrPercentage> {
     pub rect: Rect<LengthOrPercentage>,
     pub round: Option<BorderRadius<LengthOrPercentage>>,
@@ -73,7 +75,7 @@ pub struct InsetRect<LengthOrPercentage> {
 /// https://drafts.csswg.org/css-shapes/#funcdef-circle
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Copy, Debug, PartialEq, ToComputedValue)]
+#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, PartialEq, ToComputedValue)]
 pub struct Circle<H, V, LengthOrPercentage> {
     pub position: Position<H, V>,
     pub radius: ShapeRadius<LengthOrPercentage>,
@@ -82,7 +84,7 @@ pub struct Circle<H, V, LengthOrPercentage> {
 /// https://drafts.csswg.org/css-shapes/#funcdef-ellipse
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Copy, Debug, PartialEq, ToComputedValue)]
+#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, PartialEq, ToComputedValue)]
 pub struct Ellipse<H, V, LengthOrPercentage> {
     pub position: Position<H, V>,
     pub semiaxis_x: ShapeRadius<LengthOrPercentage>,
@@ -92,7 +94,7 @@ pub struct Ellipse<H, V, LengthOrPercentage> {
 /// https://drafts.csswg.org/css-shapes/#typedef-shape-radius
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Copy, Debug, PartialEq, ToComputedValue, ToCss)]
+#[derive(Clone, ComputeSquaredDistance, Copy, Debug, PartialEq, ToComputedValue, ToCss)]
 pub enum ShapeRadius<LengthOrPercentage> {
     Length(LengthOrPercentage),
     ClosestSide,
@@ -121,7 +123,56 @@ define_css_keyword_enum!(FillRule:
 );
 add_impls_for_keyword_enum!(FillRule);
 
-impl<B, T> HasViewportPercentage for ShapeSource<B, T> {
+// FIXME(nox): This should be derivable, but we need to implement Animate
+// on the T types.
+impl<B, T, U> Animate for ShapeSource<B, T, U>
+where
+    B: Animate,
+    T: Clone + PartialEq,
+{
+    fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
+        match (self, other) {
+            (
+                &ShapeSource::Shape(ref this, ref this_box),
+                &ShapeSource::Shape(ref other, ref other_box),
+            ) if this_box == other_box => {
+                Ok(ShapeSource::Shape(
+                    this.animate(other, procedure)?,
+                    this_box.clone(),
+                ))
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+// FIXME(nox): Implement ComputeSquaredDistance for T types and stop
+// using PartialEq here, this will let us derive this impl.
+impl<B, T, U> ComputeSquaredDistance for ShapeSource<B, T, U>
+where
+    B: ComputeSquaredDistance,
+    T: PartialEq,
+{
+    fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
+        match (self, other) {
+            (
+                &ShapeSource::Shape(ref this, ref this_box),
+                &ShapeSource::Shape(ref other, ref other_box),
+            ) if this_box == other_box => {
+                this.compute_squared_distance(other)
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl<B, T, U> ToAnimatedZero for ShapeSource<B, T, U> {
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        Err(())
+    }
+}
+
+impl<B, T, U> HasViewportPercentage for ShapeSource<B, T, U> {
     #[inline]
     fn has_viewport_percentage(&self) -> bool { false }
 }
@@ -140,9 +191,64 @@ impl<L> ToCss for InsetRect<L>
     }
 }
 
+impl<L> Animate for ShapeRadius<L>
+where
+    L: Animate,
+{
+    fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
+        match (self, other) {
+            (&ShapeRadius::Length(ref this), &ShapeRadius::Length(ref other)) => {
+                Ok(ShapeRadius::Length(this.animate(other, procedure)?))
+            },
+            _ => Err(()),
+        }
+    }
+}
+
 impl<L> Default for ShapeRadius<L> {
     #[inline]
     fn default() -> Self { ShapeRadius::ClosestSide }
+}
+
+impl<L> Animate for Polygon<L>
+where
+    L: Animate,
+{
+    fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
+        if self.fill != other.fill {
+            return Err(());
+        }
+        if self.coordinates.len() != other.coordinates.len() {
+            return Err(());
+        }
+        let coordinates = self.coordinates.iter().zip(other.coordinates.iter()).map(|(this, other)| {
+            Ok((
+                this.0.animate(&other.0, procedure)?,
+                this.1.animate(&other.1, procedure)?,
+            ))
+        }).collect::<Result<Vec<_>, _>>()?;
+        Ok(Polygon { fill: self.fill, coordinates })
+    }
+}
+
+impl<L> ComputeSquaredDistance for Polygon<L>
+where
+    L: ComputeSquaredDistance,
+{
+    fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
+        if self.fill != other.fill {
+            return Err(());
+        }
+        if self.coordinates.len() != other.coordinates.len() {
+            return Err(());
+        }
+        self.coordinates.iter().zip(other.coordinates.iter()).map(|(this, other)| {
+            Ok(
+                this.0.compute_squared_distance(&other.0)? +
+                this.1.compute_squared_distance(&other.1)?,
+            )
+        }).sum()
+    }
 }
 
 impl<L: ToCss> ToCss for Polygon<L> {

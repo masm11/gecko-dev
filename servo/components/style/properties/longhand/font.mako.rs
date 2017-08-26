@@ -85,21 +85,21 @@ macro_rules! impl_gecko_keyword_conversions {
         use style_traits::{ToCss, ParseError};
         pub use self::FontFamily as SingleComputedValue;
 
-        #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub enum FontFamily {
             FamilyName(FamilyName),
             Generic(Atom),
         }
 
-        #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub struct FamilyName {
             pub name: Atom,
             pub syntax: FamilyNameSyntax,
         }
 
-        #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub enum FamilyNameSyntax {
             /// The family name was specified in a quoted form, e.g. "Font Name"
@@ -296,7 +296,7 @@ macro_rules! impl_gecko_keyword_conversions {
             }
         }
 
-        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub Vec<FontFamily>);
     }
@@ -314,7 +314,7 @@ macro_rules! impl_gecko_keyword_conversions {
         SpecifiedValue::parse(input)
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub enum SpecifiedValue {
         Values(Vec<FontFamily>),
         System(SystemFont),
@@ -485,7 +485,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         ///
         /// However, system fonts may provide other values. Pango
         /// may provide 350, 380, and 1000 (on top of the existing values), for example.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, ToCss)]
+        #[derive(Clone, ComputeSquaredDistance, Copy, Debug, Eq, Hash, PartialEq, ToCss)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub struct T(pub u16);
 
@@ -624,7 +624,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         }
     }
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Length(specified::LengthOrPercentage),
@@ -652,7 +652,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 
     /// CSS font keywords
-    #[derive(Debug, Copy, Clone, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum KeywordSize {
         XXSmall = 1, // This is to enable the NonZero optimization
@@ -844,8 +844,11 @@ ${helpers.single_keyword_system("font-variant-caps",
         }
 
         /// Compute it against a given base font size
-        pub fn to_computed_value_against(&self, context: &Context, base_size: FontBaseSize)
-                                         -> NonNegativeAu {
+        pub fn to_computed_value_against(
+            &self,
+            context: &Context,
+            base_size: FontBaseSize,
+        ) -> NonNegativeAu {
             use values::specified::length::FontRelativeLength;
             match *self {
                 SpecifiedValue::Length(LengthOrPercentage::Length(
@@ -856,8 +859,12 @@ ${helpers.single_keyword_system("font-variant-caps",
                         NoCalcLength::ServoCharacterWidth(value))) => {
                     value.to_computed_value(base_size.resolve(context)).into()
                 }
-                SpecifiedValue::Length(LengthOrPercentage::Length(ref l)) => {
+                SpecifiedValue::Length(LengthOrPercentage::Length(
+                        NoCalcLength::Absolute(ref l))) => {
                     context.maybe_zoom_text(l.to_computed_value(context).into())
+                }
+                SpecifiedValue::Length(LengthOrPercentage::Length(ref l)) => {
+                    l.to_computed_value(context).into()
                 }
                 SpecifiedValue::Length(LengthOrPercentage::Percentage(pc)) => {
                     base_size.resolve(context).scale_by(pc.0).into()
@@ -1108,12 +1115,12 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 
     pub mod computed_value {
-        use properties::animated_properties::Animatable;
         use values::CSSFloat;
-        use values::animated::{ToAnimatedValue, ToAnimatedZero};
+        use values::animated::{Animate, Procedure, ToAnimatedValue, ToAnimatedZero};
+        use values::distance::{ComputeSquaredDistance, SquaredDistance};
 
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-        #[derive(Copy, Clone, Debug, PartialEq, ToCss)]
+        #[derive(Clone, Copy, Debug, PartialEq, ToCss)]
         pub enum T {
             None,
             Number(CSSFloat),
@@ -1129,21 +1136,22 @@ ${helpers.single_keyword_system("font-variant-caps",
             }
         }
 
-        impl Animatable for T {
-            fn add_weighted(&self, other: &Self, self_portion: f64, other_portion: f64)
-                -> Result<Self, ()> {
-                match (*self, *other) {
-                    (T::Number(ref number), T::Number(ref other)) =>
-                        Ok(T::Number(number.add_weighted(other, self_portion, other_portion)?)),
+        impl Animate for T {
+            fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
+                match (self, other) {
+                    (&T::Number(ref number), &T::Number(ref other)) => {
+                        Ok(T::Number(number.animate(other, procedure)?))
+                    },
                     _ => Err(()),
                 }
             }
+        }
 
+        impl ComputeSquaredDistance for T {
             #[inline]
-            fn compute_distance(&self, other: &Self) -> Result<f64, ()> {
-                match (*self, *other) {
-                    (T::Number(ref number), T::Number(ref other)) =>
-                        number.compute_distance(other),
+            fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
+                match (self, other) {
+                    (&T::Number(ref this), &T::Number(ref other)) => this.compute_squared_distance(other),
                     _ => Err(()),
                 }
             }
@@ -1209,7 +1217,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         pub use super::SpecifiedValue as T;
     }
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub struct SpecifiedValue {
         pub weight: bool,
@@ -1317,7 +1325,7 @@ ${helpers.single_keyword_system("font-kerning",
 
     no_viewport_percentage!(SpecifiedValue);
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum VariantAlternates {
         Stylistic(CustomIdent),
@@ -1329,11 +1337,11 @@ ${helpers.single_keyword_system("font-kerning",
         HistoricalForms,
     }
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub struct VariantAlternatesList(pub Box<[VariantAlternates]>);
 
-    #[derive(Debug, Clone, PartialEq, ToCss)]
+    #[derive(Clone, Debug, PartialEq, ToCss)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Value(VariantAlternatesList),
@@ -1544,7 +1552,7 @@ macro_rules! exclusive_value {
     }
 
 
-    #[derive(Debug, Clone, PartialEq, ToCss)]
+    #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantEastAsian),
         System(SystemFont)
@@ -1690,7 +1698,7 @@ macro_rules! exclusive_value {
     }
 
 
-    #[derive(Debug, Clone, PartialEq, ToCss)]
+    #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantLigatures),
         System(SystemFont)
@@ -1850,7 +1858,7 @@ macro_rules! exclusive_value {
 
 
 
-    #[derive(Debug, Clone, PartialEq, ToCss)]
+    #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantNumeric),
         System(SystemFont)
@@ -1989,7 +1997,7 @@ ${helpers.single_keyword_system("font-variant-position",
     use properties::longhands::system_font::SystemFont;
     use values::generics::FontSettings;
 
-    #[derive(Debug, Clone, PartialEq, ToCss)]
+    #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(computed_value::T),
         System(SystemFont)
@@ -2066,7 +2074,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
     use byteorder::{BigEndian, ByteOrder};
     no_viewport_percentage!(SpecifiedValue);
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Normal,
@@ -2123,7 +2131,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         // OpenType "language system" tag, so we should be able to compute
         // it and store it as a 32-bit integer
         // (see http://www.microsoft.com/typography/otspec/languagetags.htm).
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub u32);
     }
@@ -2296,7 +2304,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         0
     }
 
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum SpecifiedValue {
         Relative(i32),
         Absolute(i32),
@@ -2307,7 +2315,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
             match *self {
                 SpecifiedValue::Auto => dest.write_str("auto"),
-                SpecifiedValue::Relative(rel) => write!(dest, "{}", rel),
+                SpecifiedValue::Relative(rel) => rel.to_css(dest),
                 // can only be specified by pres attrs; should not
                 // serialize to anything else
                 SpecifiedValue::Absolute(_) => Ok(()),
@@ -2635,7 +2643,7 @@ ${helpers.single_keyword("-moz-math-variant",
         // a lot of code with `if product == gecko` conditionals, we have a
         // dummy system font module that does nothing
 
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, ToCss)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ToCss)]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         /// void enum for system font, can never exist
         pub enum SystemFont {}

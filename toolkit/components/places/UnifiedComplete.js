@@ -299,24 +299,17 @@ Cu.import("resource://gre/modules/Services.jsm");
 
 Cu.importGlobalProperties(["fetch"]);
 
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
-                                  "resource://gre/modules/TelemetryStopwatch.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
-                                  "resource://gre/modules/Sqlite.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ExtensionSearchHandler",
-                                  "resource://gre/modules/ExtensionSearchHandler.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesSearchAutocompleteProvider",
-                                  "resource://gre/modules/PlacesSearchAutocompleteProvider.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesRemoteTabsAutocompleteProvider",
-                                  "resource://gre/modules/PlacesRemoteTabsAutocompleteProvider.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
-                                  "resource://gre/modules/BrowserUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ProfileAge",
-                                  "resource://gre/modules/ProfileAge.jsm");
+XPCOMUtils.defineLazyModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  TelemetryStopwatch: "resource://gre/modules/TelemetryStopwatch.jsm",
+  Sqlite: "resource://gre/modules/Sqlite.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  ExtensionSearchHandler: "resource://gre/modules/ExtensionSearchHandler.jsm",
+  PlacesSearchAutocompleteProvider: "resource://gre/modules/PlacesSearchAutocompleteProvider.jsm",
+  PlacesRemoteTabsAutocompleteProvider: "resource://gre/modules/PlacesRemoteTabsAutocompleteProvider.jsm",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
+  ProfileAge: "resource://gre/modules/ProfileAge.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(this, "textURIService",
                                    "@mozilla.org/intl/texttosuburi;1",
@@ -350,6 +343,11 @@ XPCOMUtils.defineLazyGetter(this, "SwitchToTabStorage", () => Object.seal({
   _conn: null,
   // Temporary queue used while the database connection is not available.
   _queue: new Map(),
+  // Whether we are in the process of updating the temp table.
+  _updatingLevel: 0,
+  get updating() {
+    return this._updatingLevel > 0;
+  },
   async initDatabase(conn) {
     // To reduce IO use an in-memory table for switch-to-tab tracking.
     // Note: this should be kept up-to-date with the definition in
@@ -379,7 +377,7 @@ XPCOMUtils.defineLazyGetter(this, "SwitchToTabStorage", () => Object.seal({
     // Populate the table with the current cache contents...
     for (let [userContextId, uris] of this._queue) {
       for (let uri of uris) {
-        this.add(uri, userContextId);
+        this.add(uri, userContextId).catch(Cu.reportError);
       }
     }
 
@@ -387,7 +385,7 @@ XPCOMUtils.defineLazyGetter(this, "SwitchToTabStorage", () => Object.seal({
     this._queue.clear();
   },
 
-  add(uri, userContextId) {
+  async add(uri, userContextId) {
     if (!this._conn) {
       if (!this._queue.has(userContextId)) {
         this._queue.set(userContextId, new Set());
@@ -395,23 +393,27 @@ XPCOMUtils.defineLazyGetter(this, "SwitchToTabStorage", () => Object.seal({
       this._queue.get(userContextId).add(uri);
       return;
     }
-    this._conn.executeCached(
-      `INSERT OR REPLACE INTO moz_openpages_temp (url, userContextId, open_count)
-         VALUES ( :url,
-                  :userContextId,
-                  IFNULL( ( SELECT open_count + 1
-                            FROM moz_openpages_temp
-                            WHERE url = :url
-                            AND userContextId = :userContextId ),
-                          1
-                        )
-                )`
-    , { url: uri.spec, userContextId });
+    try {
+      this._updatingLevel++;
+      await this._conn.executeCached(
+        `INSERT OR REPLACE INTO moz_openpages_temp (url, userContextId, open_count)
+          VALUES ( :url,
+                    :userContextId,
+                    IFNULL( ( SELECT open_count + 1
+                              FROM moz_openpages_temp
+                              WHERE url = :url
+                              AND userContextId = :userContextId ),
+                            1
+                          )
+                  )
+        `, { url: uri.spec, userContextId });
+    } finally {
+      this._updatingLevel--;
+    }
   },
 
-  delete(uri, userContextId) {
+  async delete(uri, userContextId) {
     if (!this._conn) {
-      // This should not happen.
       if (!this._queue.has(userContextId)) {
         throw new Error("Unknown userContextId!");
       }
@@ -422,12 +424,17 @@ XPCOMUtils.defineLazyGetter(this, "SwitchToTabStorage", () => Object.seal({
       }
       return;
     }
-    this._conn.executeCached(
-      `UPDATE moz_openpages_temp
-       SET open_count = open_count - 1
-       WHERE url = :url
-       AND userContextId = :userContextId`
-    , { url: uri.spec, userContextId });
+    try {
+      this._updatingLevel++;
+      await this._conn.executeCached(
+        `UPDATE moz_openpages_temp
+         SET open_count = open_count - 1
+         WHERE url = :url
+           AND userContextId = :userContextId
+        `, { url: uri.spec, userContextId });
+    } finally {
+      this._updatingLevel--;
+    }
   },
 
   shutdown() {
@@ -954,6 +961,9 @@ Search.prototype = {
       this._searchSuggestionController.stop();
       this._searchSuggestionController = null;
     }
+    if (typeof this.interrupt == "function") {
+      this.interrupt();
+    }
     this.pending = false;
   },
 
@@ -971,6 +981,14 @@ Search.prototype = {
     // A search might be canceled before it starts.
     if (!this.pending)
       return;
+
+    // Used by stop() to interrupt an eventual running statement.
+    this.interrupt = () => {
+      // Interrupt any ongoing statement to run the search sooner.
+      if (!SwitchToTabStorage.updating) {
+        conn.interrupt();
+      }
+    }
 
     TelemetryStopwatch.start(TELEMETRY_1ST_RESULT, this);
     if (this._searchString)
@@ -1387,9 +1405,9 @@ Search.prototype = {
         // like a URL, then we'll probably have a result.
         let gotResult = false;
         let [ query, params ] = this._urlQuery;
-        await conn.executeCached(query, params, row => {
+        await conn.executeCached(query, params, (row, cancel) => {
           gotResult = true;
-          this._onResultRow(row);
+          this._onResultRow(row, cancel);
         });
         return gotResult;
       }
@@ -1398,9 +1416,9 @@ Search.prototype = {
 
     let gotResult = false;
     let [ query, params ] = this._hostQuery;
-    await conn.executeCached(query, params, row => {
+    await conn.executeCached(query, params, (row, cancel) => {
       gotResult = true;
-      this._onResultRow(row);
+      this._onResultRow(row, cancel);
     });
     return gotResult;
   },
@@ -1676,8 +1694,8 @@ Search.prototype = {
     // pass the pretty, unescaped URL as the match comment, since it's likely
     // to be displayed to the user, and in any case the front-end should not
     // rely on it being canonical.
-    let escapedURL = uri.spec;
-    let displayURL = textURIService.unEscapeURIForUI("UTF-8", uri.spec);
+    let escapedURL = uri.displaySpec;
+    let displayURL = textURIService.unEscapeURIForUI("UTF-8", uri.displaySpec);
 
     let value = PlacesUtils.mozActionURI("visiturl", {
       url: escapedURL,
@@ -1706,7 +1724,7 @@ Search.prototype = {
     return true;
   },
 
-  _onResultRow(row) {
+  _onResultRow(row, cancel) {
     if (this._counts[MATCHTYPE.GENERAL] == 0) {
       TelemetryStopwatch.finish(TELEMETRY_1ST_RESULT, this);
     }
@@ -1729,7 +1747,7 @@ Search.prototype = {
     // If the search has been canceled by the user or by _addMatch, or we
     // fetched enough results, we can stop the underlying Sqlite query.
     if (!this.pending || this._counts[MATCHTYPE.GENERAL] == Prefs.get("maxRichResults"))
-      throw StopIteration;
+      cancel();
   },
 
   _maybeRestyleSearchMatch(match) {
@@ -2296,11 +2314,11 @@ UnifiedComplete.prototype = {
   // mozIPlacesAutoComplete
 
   registerOpenPage(uri, userContextId) {
-    SwitchToTabStorage.add(uri, userContextId);
+    SwitchToTabStorage.add(uri, userContextId).catch(Cu.reportError);
   },
 
   unregisterOpenPage(uri, userContextId) {
-    SwitchToTabStorage.delete(uri, userContextId);
+    SwitchToTabStorage.delete(uri, userContextId).catch(Cu.reportError);
   },
 
   populatePreloadedSiteStorage(json) {

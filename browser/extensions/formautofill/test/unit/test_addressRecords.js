@@ -102,6 +102,101 @@ const MERGE_TESTCASES = [
       country: "US",
     },
   },
+  {
+    description: "Merge an address with multi-line street-address in storage and single-line incoming one",
+    addressInStorage: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2",
+      "tel": "+16509030800",
+    },
+    addressToMerge: {
+      "street-address": "331 E. Evelyn Avenue Line2",
+      "tel": "+16509030800",
+      country: "US",
+    },
+    expectedAddress: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2",
+      "tel": "+16509030800",
+      country: "US",
+    },
+  },
+  {
+    description: "Merge an address with 3-line street-address in storage and 2-line incoming one",
+    addressInStorage: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+    },
+    addressToMerge: {
+      "street-address": "331 E. Evelyn Avenue\nLine2 Line3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+    expectedAddress: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+  },
+  {
+    description: "Merge an address with single-line street-address in storage and multi-line incoming one",
+    addressInStorage: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue Line2",
+      "tel": "+16509030800",
+    },
+    addressToMerge: {
+      "street-address": "331 E. Evelyn Avenue\nLine2",
+      "tel": "+16509030800",
+      country: "US",
+    },
+    expectedAddress: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2",
+      "tel": "+16509030800",
+      country: "US",
+    },
+  },
+  {
+    description: "Merge an address with 2-line street-address in storage and 3-line incoming one",
+    addressInStorage: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2 Line3",
+      "tel": "+16509030800",
+    },
+    addressToMerge: {
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+    expectedAddress: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+  },
+  {
+    description: "Merge an address with the same amount of lines",
+    addressInStorage: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+    },
+    addressToMerge: {
+      "street-address": "331 E. Evelyn\nAvenue Line2\nLine3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+    expectedAddress: {
+      "given-name": "Timothy",
+      "street-address": "331 E. Evelyn Avenue\nLine2\nLine3",
+      "tel": "+16509030800",
+      country: "US",
+    },
+  },
 ];
 
 let do_check_record_matches = (recordWithMeta, record) => {
@@ -177,40 +272,6 @@ add_task(async function test_get() {
   do_check_record_matches(profileStorage.addresses.get(guid), TEST_ADDRESS_1);
 
   do_check_eq(profileStorage.addresses.get("INVALID_GUID"), null);
-});
-
-add_task(async function test_getByFilter() {
-  let profileStorage = await initProfileStorage(TEST_STORE_FILE_NAME,
-                                                [TEST_ADDRESS_1, TEST_ADDRESS_2]);
-
-  let filter = {info: {fieldName: "street-address"}, searchString: "Some"};
-  let addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 1);
-  do_check_record_matches(addresses[0], TEST_ADDRESS_2);
-
-  filter = {info: {fieldName: "country"}, searchString: "u"};
-  addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 2);
-  do_check_record_matches(addresses[0], TEST_ADDRESS_1);
-  do_check_record_matches(addresses[1], TEST_ADDRESS_2);
-
-  filter = {info: {fieldName: "street-address"}, searchString: "test"};
-  addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 0);
-
-  filter = {info: {fieldName: "street-address"}, searchString: ""};
-  addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 2);
-
-  // Check if the filtering logic is free from searching special chars.
-  filter = {info: {fieldName: "street-address"}, searchString: ".*"};
-  addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 0);
-
-  // Prevent broken while searching the property that does not exist.
-  filter = {info: {fieldName: "tel"}, searchString: "1"};
-  addresses = profileStorage.addresses.getByFilter(filter);
-  do_check_eq(addresses.length, 0);
 });
 
 add_task(async function test_add() {

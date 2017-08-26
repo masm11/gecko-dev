@@ -92,7 +92,7 @@ extern crate unicode_segmentation;
 #[macro_use]
 mod macros;
 
-pub mod animation;
+#[cfg(feature = "servo")] pub mod animation;
 pub mod applicable_declarations;
 #[allow(missing_docs)] // TODO.
 #[cfg(feature = "servo")] pub mod attr;
@@ -201,7 +201,7 @@ pub fn serialize_comma_separated_list<W, T>(dest: &mut W,
     list[0].to_css(dest)?;
 
     for item in list.iter().skip(1) {
-        write!(dest, ", ")?;
+        dest.write_str(", ")?;
         item.to_css(dest)?;
     }
 

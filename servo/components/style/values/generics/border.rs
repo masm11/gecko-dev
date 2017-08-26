@@ -35,7 +35,8 @@ pub struct BorderImageSlice<NumberOrPercentage> {
 ///
 /// https://drafts.csswg.org/css-backgrounds-3/#border-radius
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Copy, Debug, HasViewportPercentage, PartialEq, ToComputedValue)]
+#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, HasViewportPercentage)]
+#[derive(PartialEq, ToComputedValue)]
 pub struct BorderRadius<LengthOrPercentage> {
     /// The top left radius.
     pub top_left: BorderCornerRadius<LengthOrPercentage>,
@@ -47,9 +48,10 @@ pub struct BorderRadius<LengthOrPercentage> {
     pub bottom_left: BorderCornerRadius<LengthOrPercentage>,
 }
 
-#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Copy, Debug, HasViewportPercentage, PartialEq, ToComputedValue)]
 /// A generic value for `border-*-radius` longhand properties.
+#[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, HasViewportPercentage)]
+#[derive(PartialEq, ToComputedValue)]
 pub struct BorderCornerRadius<L>(pub Size2D<L>);
 
 impl<N> From<N> for BorderImageSlice<N>

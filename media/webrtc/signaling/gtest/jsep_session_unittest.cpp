@@ -1003,10 +1003,14 @@ protected:
   ValidateDisabledMSection(const SdpMediaSection* msection)
   {
     ASSERT_EQ(1U, msection->GetFormats().size());
-    // Maybe validate that no attributes are present except rtpmap and
-    // inactive? How?
+
+    auto& attrs = msection->GetAttributeList();
+    ASSERT_TRUE(attrs.HasAttribute(SdpAttribute::kMidAttribute));
+    ASSERT_TRUE(attrs.HasAttribute(SdpAttribute::kDirectionAttribute));
     ASSERT_EQ(SdpDirectionAttribute::kInactive,
               msection->GetDirectionAttribute().mValue);
+    // attribute list is missing a length function to check if these are
+    // all the attributes in it
     if (msection->GetMediaType() == SdpMediaSection::kAudio) {
       ASSERT_EQ("0", msection->GetFormats()[0]);
       const SdpRtpmapAttributeList::Rtpmap* rtpmap(msection->FindRtpmap("0"));
@@ -1605,10 +1609,10 @@ TEST_P(JsepSessionTest, RenegotiationBothAddTracksToExistingStream)
 
   auto oHasStream = HasMediaStream(mSessionOff->GetLocalTracks());
   auto aHasStream = HasMediaStream(mSessionAns->GetLocalTracks());
-  ASSERT_EQ(oHasStream, GetLocalUniqueStreamIds(*mSessionOff).size() > 0);
-  ASSERT_EQ(aHasStream, GetLocalUniqueStreamIds(*mSessionAns).size() > 0);
-  ASSERT_EQ(aHasStream, GetRemoteUniqueStreamIds(*mSessionOff).size()> 0);
-  ASSERT_EQ(oHasStream, GetRemoteUniqueStreamIds(*mSessionAns).size() > 0);
+  ASSERT_EQ(oHasStream, !GetLocalUniqueStreamIds(*mSessionOff).empty());
+  ASSERT_EQ(aHasStream, !GetLocalUniqueStreamIds(*mSessionAns).empty());
+  ASSERT_EQ(aHasStream, !GetRemoteUniqueStreamIds(*mSessionOff).empty());
+  ASSERT_EQ(oHasStream, !GetRemoteUniqueStreamIds(*mSessionAns).empty());
 
   auto firstOffId = GetFirstLocalStreamId(*mSessionOff);
   auto firstAnsId = GetFirstLocalStreamId(*mSessionAns);
@@ -1628,10 +1632,10 @@ TEST_P(JsepSessionTest, RenegotiationBothAddTracksToExistingStream)
   oHasStream = HasMediaStream(mSessionOff->GetLocalTracks());
   aHasStream = HasMediaStream(mSessionAns->GetLocalTracks());
 
-  ASSERT_EQ(oHasStream, GetLocalUniqueStreamIds(*mSessionOff).size() > 0);
-  ASSERT_EQ(aHasStream, GetLocalUniqueStreamIds(*mSessionAns).size() > 0);
-  ASSERT_EQ(aHasStream, GetRemoteUniqueStreamIds(*mSessionOff).size() > 0);
-  ASSERT_EQ(oHasStream, GetRemoteUniqueStreamIds(*mSessionAns).size() > 0);
+  ASSERT_EQ(oHasStream, !GetLocalUniqueStreamIds(*mSessionOff).empty());
+  ASSERT_EQ(aHasStream, !GetLocalUniqueStreamIds(*mSessionAns).empty());
+  ASSERT_EQ(aHasStream, !GetRemoteUniqueStreamIds(*mSessionOff).empty());
+  ASSERT_EQ(oHasStream, !GetRemoteUniqueStreamIds(*mSessionAns).empty());
   if (oHasStream) {
     ASSERT_STREQ(firstOffId.c_str(),
                  GetFirstLocalStreamId(*mSessionOff).c_str());
@@ -1642,8 +1646,8 @@ TEST_P(JsepSessionTest, RenegotiationBothAddTracksToExistingStream)
 
   auto oHasStream = HasMediaStream(mSessionOff->GetLocalTracks());
   auto aHasStream = HasMediaStream(mSessionAns->GetLocalTracks());
-  ASSERT_EQ(oHasStream, GetLocalUniqueStreamIds(*mSessionOff).size() > 0);
-  ASSERT_EQ(aHasStream, GetLocalUniqueStreamIds(*mSessionAns).size() > 0);
+  ASSERT_EQ(oHasStream, !GetLocalUniqueStreamIds(*mSessionOff).empty());
+  ASSERT_EQ(aHasStream, !GetLocalUniqueStreamIds(*mSessionAns).empty());
   }
 }
 

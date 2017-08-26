@@ -2,7 +2,7 @@
 # Script to update mp4parse-rust sources to latest upstream
 
 # Default version.
-VER=7563263b6804a81986cc93b557fe05bd57fd57b3
+VER=f63b23d75ffa823d713a2a10724acd9cd6689ebc
 
 # Accept version or commit from the command line.
 if test -n "$1"; then

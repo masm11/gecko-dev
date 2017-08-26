@@ -63,14 +63,13 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem::transmute;
 use std::sync::atomic::Ordering;
-use style;
 use style::CaseSensitivityExt;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::attr::AttrValue;
 use style::computed_values::display;
 use style::context::{QuirksMode, SharedStyleContext};
 use style::data::ElementData;
-use style::dom::{DescendantsBit, DirtyDescendants, LayoutIterator, NodeInfo, OpaqueNode};
+use style::dom::{LayoutIterator, NodeInfo, OpaqueNode};
 use style::dom::{PresentationalHintsSynthesizer, TElement, TNode, UnsafeNode};
 use style::element_state::*;
 use style::font_metrics::ServoMetricsProvider;
@@ -86,7 +85,7 @@ pub unsafe fn drop_style_and_layout_data(data: OpaqueStyleAndLayoutData) {
     let _ = Box::from_raw(non_opaque);
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct ServoLayoutNode<'a> {
     /// The wrapped node.
     node: LayoutJS<Node>,
@@ -330,7 +329,7 @@ impl<'ln> ServoLayoutNode<'ln> {
 }
 
 // A wrapper around documents that ensures ayout can only ever access safe properties.
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct ServoLayoutDocument<'ld> {
     document: LayoutJS<Document>,
     chain: PhantomData<&'ld ()>,
@@ -375,7 +374,7 @@ impl<'ld> ServoLayoutDocument<'ld> {
 }
 
 /// A wrapper around elements that ensures layout can only ever access safe properties.
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct ServoLayoutElement<'le> {
     element: LayoutJS<Element>,
     chain: PhantomData<&'le ()>,
@@ -445,14 +444,6 @@ impl<'le> TElement for ServoLayoutElement<'le> {
         }
     }
 
-    #[inline]
-    fn existing_style_for_restyle_damage<'a>(&'a self,
-                                             current_cv: &'a ComputedValues,
-                                             _pseudo_element: Option<&PseudoElement>)
-                                             -> Option<&'a ComputedValues> {
-        Some(current_cv)
-    }
-
     fn has_dirty_descendants(&self) -> bool {
         unsafe { self.as_node().node.get_flag(HAS_DIRTY_DESCENDANTS) }
     }
@@ -467,11 +458,6 @@ impl<'le> TElement for ServoLayoutElement<'le> {
 
     unsafe fn set_handled_snapshot(&self) {
         self.as_node().node.set_flag(HANDLED_SNAPSHOT, true);
-    }
-
-    unsafe fn note_descendants<B: DescendantsBit<Self>>(&self) {
-        debug_assert!(self.get_data().is_some());
-        style::dom::raw_note_descendants::<Self, B>(*self);
     }
 
     unsafe fn set_dirty_descendants(&self) {
@@ -625,12 +611,6 @@ impl<'le> ServoLayoutElement<'le> {
         self.as_node().node.set_flag(HAS_SNAPSHOT, true);
     }
 
-    // FIXME(bholley): This should be merged with TElement::note_descendants,
-    // but that requires re-testing and possibly fixing the broken callers given
-    // the FIXME below, which I don't have time to do right now.
-    //
-    // FIXME(emilio): We'd also need to relax the invariant in note_descendants
-    // re. the data already available I think.
     pub unsafe fn note_dirty_descendant(&self) {
         use ::selectors::Element;
 
@@ -644,8 +624,6 @@ impl<'le> ServoLayoutElement<'le> {
             el.set_dirty_descendants();
             current = el.parent_element();
         }
-
-        debug_assert!(self.descendants_bit_is_propagated::<DirtyDescendants>());
     }
 }
 
@@ -832,7 +810,7 @@ impl<'le> ::selectors::Element for ServoLayoutElement<'le> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ServoThreadSafeLayoutNode<'ln> {
     /// The wrapped node.
     node: ServoLayoutNode<'ln>,
@@ -1125,7 +1103,7 @@ impl<ConcreteNode> Iterator for ThreadSafeLayoutNodeChildrenIterator<ConcreteNod
 
 /// A wrapper around elements that ensures layout can only
 /// ever access safe properties and cannot race on elements.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ServoThreadSafeLayoutElement<'le> {
     element: ServoLayoutElement<'le>,
 

@@ -20,7 +20,7 @@ var defer = require("devtools/shared/defer");
 var Services = require("Services");
 var {Task} = require("devtools/shared/task");
 var {gDevTools} = require("devtools/client/framework/devtools");
-var EventEmitter = require("devtools/shared/event-emitter");
+var EventEmitter = require("devtools/shared/old-event-emitter");
 var Telemetry = require("devtools/client/shared/telemetry");
 var { attachThread, detachThread } = require("./attach-thread");
 var Menu = require("devtools/client/framework/menu");
@@ -63,7 +63,7 @@ loader.lazyRequireGetter(this, "ToolboxButtons",
 loader.lazyRequireGetter(this, "SourceMapURLService",
   "devtools/client/framework/source-map-url-service", true);
 loader.lazyRequireGetter(this, "HUDService",
-  "devtools/client/webconsole/hudservice");
+  "devtools/client/webconsole/hudservice", true);
 loader.lazyRequireGetter(this, "viewSource",
   "devtools/client/shared/view-source");
 
@@ -442,6 +442,17 @@ Toolbox.prototype = {
         this.doc.getElementById("toolbox-textbox-context-popup");
       this.textBoxContextMenuPopup.addEventListener("popupshowing",
         this._updateTextBoxMenuItems, true);
+      this.doc.addEventListener("contextmenu", (e) => {
+        if (e.originalTarget.closest("input[type=text]") ||
+            e.originalTarget.closest("input[type=search]") ||
+            e.originalTarget.closest("input:not([type])") ||
+            e.originalTarget.closest("textarea")
+        ) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.openTextBoxContextMenu(e.screenX, e.screenY);
+        }
+      }, true);
 
       this.shortcuts = new KeyShortcuts({
         window: this.doc.defaultView

@@ -239,33 +239,55 @@ class Window(object):
 
     @property
     @command
+    def rect(self):
+        return self.session.send_session_command("GET", "window/rect")
+
+    @property
+    @command
     def size(self):
-        resp = self.session.send_session_command("GET", "window/rect")
-        return (resp["width"], resp["height"])
+        """Gets the window size as a tuple of `(width, height)`."""
+        rect = self.rect
+        return (rect["width"], rect["height"])
 
     @size.setter
     @command
-    def size(self, data):
-        width, height = data
+    def size(self, new_size):
+        """Set window size by passing a tuple of `(width, height)`."""
+        width, height = new_size
         body = {"width": width, "height": height}
         self.session.send_session_command("POST", "window/rect", body)
 
     @property
     @command
     def position(self):
-        resp = self.session.send_session_command("GET", "window/rect")
-        return (resp["x"], resp["y"])
+        """Gets the window position as a tuple of `(x, y)`."""
+        rect = self.rect
+        return (rect["x"], rect["y"])
 
     @position.setter
     @command
-    def position(self, data):
-        data = x, y
+    def position(self, new_position):
+        """Set window position by passing a tuple of `(x, y)`."""
+        x, y = new_position
         body = {"x": x, "y": y}
         self.session.send_session_command("POST", "window/rect", body)
+
+    @property
+    @command
+    def state(self):
+        return self.rect["state"]
 
     @command
     def maximize(self):
         return self.session.send_session_command("POST", "window/maximize")
+
+    @command
+    def minimize(self):
+        return self.session.send_session_command("POST", "window/minimize")
+
+    @command
+    def fullscreen(self):
+        return self.session.send_session_command("POST", "window/fullscreen")
 
 
 class Find(object):
@@ -596,7 +618,7 @@ class Element(object):
                 "value": selector}
 
         elem = self.send_element_command("POST", "element", body)
-        return self.session.element(elem)
+        return self.session._element(elem)
 
     @command
     def click(self):

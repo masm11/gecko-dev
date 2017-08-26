@@ -222,8 +222,10 @@ GeckoRestyleManager::RestyleElement(Element*               aElement,
   }
 
   if (aMinHint & nsChangeHint_ReconstructFrame) {
-    FrameConstructor()->RecreateFramesForContent(aElement, false,
-      nsCSSFrameConstructor::REMOVE_FOR_RECONSTRUCTION, nullptr);
+    FrameConstructor()->RecreateFramesForContent(
+      aElement,
+      nsCSSFrameConstructor::InsertionKind::Sync,
+      nsCSSFrameConstructor::REMOVE_FOR_RECONSTRUCTION);
   } else if (aPrimaryFrame) {
     ComputeAndProcessStyleChange(aPrimaryFrame, aMinHint, aRestyleTracker,
                                  aRestyleHint, aRestyleHintData);
@@ -1517,10 +1519,10 @@ ElementRestyler::DoConditionallyRestyleUndisplayedDescendants(
     Element* aRestyleRoot)
 {
   nsCSSFrameConstructor* fc = mPresContext->FrameConstructor();
-  UndisplayedNode* nodes = fc->GetAllUndisplayedContentIn(aParent);
+  UndisplayedNode* nodes = fc->GetAllRegisteredDisplayNoneStylesIn(aParent);
   ConditionallyRestyleUndisplayedNodes(nodes, aParent,
                                        StyleDisplay::None, aRestyleRoot);
-  nodes = fc->GetAllDisplayContentsIn(aParent);
+  nodes = fc->GetAllRegisteredDisplayContentsStylesIn(aParent);
   ConditionallyRestyleUndisplayedNodes(nodes, aParent,
                                        StyleDisplay::Contents, aRestyleRoot);
 }
@@ -1724,8 +1726,8 @@ ElementRestyler::MoveStyleContextsForChildren(GeckoStyleContext* aOldContext)
   nsIContent* undisplayedParent;
   if (MustCheckUndisplayedContent(mFrame, undisplayedParent)) {
     nsCSSFrameConstructor* fc = mPresContext->FrameConstructor();
-    if (fc->GetAllUndisplayedContentIn(undisplayedParent) ||
-        fc->GetAllDisplayContentsIn(undisplayedParent)) {
+    if (fc->GetAllRegisteredDisplayNoneStylesIn(undisplayedParent) ||
+        fc->GetAllRegisteredDisplayContentsStylesIn(undisplayedParent)) {
       return false;
     }
   }
@@ -3191,10 +3193,10 @@ ElementRestyler::DoRestyleUndisplayedDescendants(nsRestyleHint aChildRestyleHint
                                                  GeckoStyleContext* aParentContext)
 {
   nsCSSFrameConstructor* fc = mPresContext->FrameConstructor();
-  UndisplayedNode* nodes = fc->GetAllUndisplayedContentIn(aParent);
+  UndisplayedNode* nodes = fc->GetAllRegisteredDisplayNoneStylesIn(aParent);
   RestyleUndisplayedNodes(aChildRestyleHint, nodes, aParent,
                           aParentContext, StyleDisplay::None);
-  nodes = fc->GetAllDisplayContentsIn(aParent);
+  nodes = fc->GetAllRegisteredDisplayContentsStylesIn(aParent);
   RestyleUndisplayedNodes(aChildRestyleHint, nodes, aParent,
                           aParentContext, StyleDisplay::Contents);
 }

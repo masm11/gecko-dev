@@ -77,14 +77,12 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/AsyncShutdown.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "AddonRepository",
-                                  "resource://gre/modules/addons/AddonRepository.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Extension",
-                                  "resource://gre/modules/Extension.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PromptUtils",
-                                  "resource://gre/modules/SharedPromptUtils.jsm");
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
+  Extension: "resource://gre/modules/Extension.jsm",
+  FileUtils: "resource://gre/modules/FileUtils.jsm",
+  PromptUtils: "resource://gre/modules/SharedPromptUtils.jsm",
+});
 
 XPCOMUtils.defineLazyGetter(this, "CertUtils", function() {
   let certUtils = {};
@@ -568,9 +566,7 @@ AddonCompatibilityOverride.prototype = {
  *         The URI of a localized properties file to get the displayable name
  *         for the type from
  * @param  aLocaleKey
- *         The key for the string in the properties file or the actual display
- *         name if aLocaleURI is null. Include %ID% to include the type ID in
- *         the key
+ *         The key for the string in the properties file.
  * @param  aViewType
  *         The optional type of view to use in the UI
  * @param  aUIPriority
@@ -600,7 +596,7 @@ function AddonType(aID, aLocaleURI, aLocaleKey, aViewType, aUIPriority, aFlags) 
   if (aLocaleURI) {
     XPCOMUtils.defineLazyGetter(this, "name", () => {
       let bundle = Services.strings.createBundle(aLocaleURI);
-      return bundle.GetStringFromName(aLocaleKey.replace("%ID%", aID));
+      return bundle.GetStringFromName(aLocaleKey);
     });
   } else {
     this.name = aLocaleKey;
