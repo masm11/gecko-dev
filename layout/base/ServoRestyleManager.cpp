@@ -1012,16 +1012,7 @@ ServoRestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags)
     aFlags |= ServoTraversalFlags::ForCSSRuleChanges;
   }
 
-  while (doc->GetServoRestyleRoot()) {
-    // Do the servo traversal.
-    bool needsPostTraversal = styleSet->StyleDocument(aFlags);
-
-    // If we don't need a post-traversal, we're done.
-    if (!needsPostTraversal) {
-      doc->ClearServoRestyleRoot();
-      break;
-    }
-
+  while (styleSet->StyleDocument(aFlags)) {
     ClearSnapshots();
 
     nsStyleChangeList currentChanges(StyleBackendType::Servo);
@@ -1086,6 +1077,8 @@ ServoRestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags)
     }
   }
 
+  doc->ClearServoRestyleRoot();
+
   FlushOverflowChangedTracker();
 
   ClearSnapshots();
@@ -1108,6 +1101,17 @@ void
 ServoRestyleManager::ProcessPendingRestyles()
 {
   DoProcessPendingRestyles(ServoTraversalFlags::Empty);
+}
+
+void
+ServoRestyleManager::ProcessAllPendingAttributeAndStateInvalidations()
+{
+  AutoTimelineMarker marker(mPresContext->GetDocShell(),
+                            "ProcessAllPendingAttributeAndStateInvalidations");
+  for (auto iter = mSnapshots.Iter(); !iter.Done(); iter.Next()) {
+    Servo_ProcessInvalidations(StyleSet()->RawSet(), iter.Key(), &mSnapshots);
+  }
+  ClearSnapshots();
 }
 
 void

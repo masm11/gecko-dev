@@ -104,6 +104,9 @@ SERVO_BINDING_FUNC(Servo_StyleSet_GetFontFaceRules, void,
                    RawGeckoFontFaceRuleListBorrowedMut list)
 SERVO_BINDING_FUNC(Servo_StyleSet_GetCounterStyleRule, nsCSSCounterStyleRule*,
                    RawServoStyleSetBorrowed set, nsIAtom* name)
+SERVO_BINDING_FUNC(Servo_StyleSet_BuildFontFeatureValueSet, bool,
+                   RawServoStyleSetBorrowed set,
+                   gfxFontFeatureValueSet* list)
 SERVO_BINDING_FUNC(Servo_StyleSet_ResolveForDeclarations,
                    ServoStyleContextStrong,
                    RawServoStyleSetBorrowed set,
@@ -619,6 +622,12 @@ SERVO_BINDING_FUNC(Servo_GetCustomPropertiesCount, uint32_t,
 SERVO_BINDING_FUNC(Servo_GetCustomPropertyNameAt, bool,
                    ServoStyleContextBorrowed, uint32_t index,
                    nsAString* name)
+
+
+SERVO_BINDING_FUNC(Servo_ProcessInvalidations, void,
+                   RawServoStyleSetBorrowed set,
+                   RawGeckoElementBorrowed element,
+                   const mozilla::ServoElementSnapshotTable* snapshots)
 
 
 // AddRef / Release functions
