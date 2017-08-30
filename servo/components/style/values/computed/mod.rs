@@ -127,9 +127,9 @@ impl<'a> Context<'a> {
         self.builder.device
     }
 
-    /// The current viewport size.
-    pub fn viewport_size(&self) -> Size2D<Au> {
-        self.builder.device.au_viewport_size()
+    /// The current viewport size, used to resolve viewport units.
+    pub fn viewport_size_for_viewport_unit_resolution(&self) -> Size2D<Au> {
+        self.builder.device.au_viewport_size_for_viewport_unit_resolution()
     }
 
     /// The default computed style we're getting our reset style from.
@@ -199,6 +199,11 @@ impl<'a, 'cx, 'cx_a: 'cx, S: ToComputedValue + 'a> Iterator for ComputedVecIter<
 }
 
 /// A trait to represent the conversion between computed and specified values.
+///
+/// This trait is derivable with `#[derive(ToComputedValue)]`. The derived
+/// implementation just calls `ToComputedValue::to_computed_value` on each field
+/// of the passed value, or `Clone::clone` if the field is annotated with
+/// `#[compute(clone)]`.
 pub trait ToComputedValue {
     /// The computed value type we're going to be converted to.
     type ComputedValue;
@@ -327,6 +332,7 @@ impl<T> ToComputedValue for T
 
 impl ComputedValueAsSpecified for Atom {}
 impl ComputedValueAsSpecified for bool {}
+impl ComputedValueAsSpecified for f32 {}
 
 impl ComputedValueAsSpecified for specified::BorderStyle {}
 

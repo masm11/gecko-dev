@@ -10,7 +10,6 @@
 
 #include "gfxContext.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsContentList.h"
 #include "nsContentUtils.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
@@ -104,9 +103,9 @@ nsRangeFrame::DestroyFrom(nsIFrame* aDestructRoot)
   mContent->RemoveEventListener(NS_LITERAL_STRING("touchstart"), mDummyTouchListener, false);
 
   nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
-  nsContentUtils::DestroyAnonymousContent(&mTrackDiv);
-  nsContentUtils::DestroyAnonymousContent(&mProgressDiv);
-  nsContentUtils::DestroyAnonymousContent(&mThumbDiv);
+  DestroyAnonymousContent(mTrackDiv.forget());
+  DestroyAnonymousContent(mProgressDiv.forget());
+  DestroyAnonymousContent(mThumbDiv.forget());
   nsContainerFrame::DestroyFrom(aDestructRoot);
 }
 

@@ -630,7 +630,7 @@ public:
   static nsIPrincipal* ObjectPrincipal(JSObject* aObj);
 
   static nsresult GenerateStateKey(nsIContent* aContent,
-                                   const nsIDocument* aDocument,
+                                   nsIDocument* aDocument,
                                    nsACString& aKey);
 
   /**
@@ -1671,12 +1671,6 @@ public:
    * Delete strings allocated for nsContentList matches
    */
   static void DestroyMatchString(void* aData);
-
-  /**
-   * Unbinds the content from the tree and nulls it out if it's not null.
-   */
-  static void DestroyAnonymousContent(nsCOMPtr<nsIContent>* aContent);
-  static void DestroyAnonymousContent(nsCOMPtr<Element>* aElement);
 
   /*
    * Notify when the first XUL menu is opened and when the all XUL menus are
@@ -2965,6 +2959,11 @@ public:
 
   static void SetupCustomElement(Element* aElement,
                                  const nsAString* aTypeExtension = nullptr);
+
+  static mozilla::dom::CustomElementDefinition*
+  GetElementDefinitionIfObservingAttr(Element* aCustomElement,
+                                      nsIAtom* aExtensionType,
+                                      nsIAtom* aAttrName);
 
   static void EnqueueLifecycleCallback(nsIDocument* aDoc,
                                        nsIDocument::ElementCallbackType aType,

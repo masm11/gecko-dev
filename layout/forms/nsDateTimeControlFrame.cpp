@@ -15,7 +15,6 @@
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsContentList.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsNodeInfoManager.h"
 #include "nsIDateTimeInputArea.h"
@@ -50,7 +49,7 @@ nsDateTimeControlFrame::nsDateTimeControlFrame(nsStyleContext* aContext)
 void
 nsDateTimeControlFrame::DestroyFrom(nsIFrame* aDestructRoot)
 {
-  nsContentUtils::DestroyAnonymousContent(&mInputAreaContent);
+  DestroyAnonymousContent(mInputAreaContent.forget());
   nsContainerFrame::DestroyFrom(aDestructRoot);
 }
 

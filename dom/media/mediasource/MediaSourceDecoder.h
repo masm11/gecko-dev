@@ -49,6 +49,8 @@ public:
     return mDemuxer;
   }
 
+  already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override;
+
   bool IsTransportSeekable() override { return true; }
 
   // Returns a string describing the state of the MediaSource internal
@@ -64,14 +66,16 @@ public:
   void NotifyInitDataArrived();
 
 private:
-  MediaResource* GetResource() const override final;
+  void PinForSeek() override {}
+  void UnpinForSeek() override {}
   MediaDecoderStateMachine* CreateStateMachine();
   void DoSetMediaSourceDuration(double aDuration);
   media::TimeInterval ClampIntervalToEnd(const media::TimeInterval& aInterval);
   bool CanPlayThroughImpl() override;
   bool IsLiveStream() override final { return !mEnded; }
 
-  RefPtr<MediaSourceResource> mResource;
+  UniquePtr<MediaSourceResource> mResource;
+  RefPtr<nsIPrincipal> mPrincipal;
 
   // The owning MediaSource holds a strong reference to this decoder, and
   // calls Attach/DetachMediaSource on this decoder to set and clear

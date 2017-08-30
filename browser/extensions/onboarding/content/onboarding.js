@@ -238,7 +238,7 @@ var onboardingTourset = {
           <img src="resource://onboarding/img/figure_library.svg" role="presentation"/>
         </section>
         <aside class="onboarding-tour-button-container">
-          <button id="onboarding-tour-library-button" class="onboarding-tour-action-button" data-l10n-id="onboarding.tour-library.button"></button>
+          <button id="onboarding-tour-library-button" class="onboarding-tour-action-button" data-l10n-id="onboarding.tour-library.button2"></button>
         </aside>
       `;
       return div;
@@ -603,13 +603,14 @@ class Onboarding {
     }
     this.uiInitialized = false;
 
+    this._overlayIcon.dispatchEvent(new this._window.CustomEvent("Agent:Destroy"));
+
     this._clearPrefObserver();
     this._overlayIcon.remove();
     this._overlay.remove();
     if (this._notificationBar) {
       this._notificationBar.remove();
     }
-
     this._tourItems = this._tourPages =
     this._overlayIcon = this._overlay = this._notificationBar = null;
   }
@@ -1077,27 +1078,26 @@ class Onboarding {
 }
 
 // Load onboarding module only when we enable it.
-if (Services.prefs.getBoolPref("browser.onboarding.enabled", false) &&
-    !Services.prefs.getBoolPref("browser.onboarding.hidden", false)) {
-
+if (Services.prefs.getBoolPref("browser.onboarding.enabled", false)) {
   addEventListener("load", function onLoad(evt) {
     if (!content || evt.target != content.document) {
       return;
     }
-    removeEventListener("load", onLoad);
 
-    let window = evt.target.defaultView;
-    let location = window.location.href;
-    if (location == ABOUT_NEWTAB_URL || location == ABOUT_HOME_URL) {
-      // We just want to run tests as quick as possible
-      // so in the automation test, we don't do `requestIdleCallback`.
-      if (Cu.isInAutomation) {
-        new Onboarding(window);
-        return;
+    if (!Services.prefs.getBoolPref("browser.onboarding.hidden", false)) {
+      let window = evt.target.defaultView;
+      let location = window.location.href;
+      if (location == ABOUT_NEWTAB_URL || location == ABOUT_HOME_URL) {
+        // We just want to run tests as quick as possible
+        // so in the automation test, we don't do `requestIdleCallback`.
+        if (Cu.isInAutomation) {
+          new Onboarding(window);
+          return;
+        }
+        window.requestIdleCallback(() => {
+          new Onboarding(window);
+        });
       }
-      window.requestIdleCallback(() => {
-        new Onboarding(window);
-      });
     }
   }, true);
 }

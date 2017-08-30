@@ -192,12 +192,6 @@ ChannelMediaDecoder::Clone(MediaDecoderInit& aInit)
   return decoder.forget();
 }
 
-MediaResource*
-ChannelMediaDecoder::GetResource() const
-{
-  return mResource;
-}
-
 MediaDecoderStateMachine* ChannelMediaDecoder::CreateStateMachine()
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -487,6 +481,22 @@ ChannelMediaDecoder::ShouldThrottleDownload()
   return stats.mDownloadRate > factor * stats.mPlaybackRate;
 }
 
+void
+ChannelMediaDecoder::AddSizeOfResources(ResourceSizes* aSizes)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mResource) {
+    aSizes->mByteSize += mResource->SizeOfIncludingThis(aSizes->mMallocSizeOf);
+  }
+}
+
+already_AddRefed<nsIPrincipal>
+ChannelMediaDecoder::GetCurrentPrincipal()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  return mResource ? mResource->GetCurrentPrincipal() : nullptr;
+}
+
 bool
 ChannelMediaDecoder::IsTransportSeekable()
 {
@@ -519,6 +529,29 @@ ChannelMediaDecoder::Resume()
   if (mResource) {
     mResource->Resume();
   }
+}
+
+void
+ChannelMediaDecoder::PinForSeek()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!mResource || mPinnedForSeek) {
+    return;
+  }
+  mPinnedForSeek = true;
+  mResource->Pin();
+}
+
+void
+ChannelMediaDecoder::UnpinForSeek()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+  if (!mResource || !mPinnedForSeek) {
+    return;
+  }
+  mPinnedForSeek = false;
+  mResource->Unpin();
 }
 
 void
