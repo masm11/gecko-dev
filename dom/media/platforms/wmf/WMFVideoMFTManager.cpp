@@ -60,7 +60,7 @@ const wchar_t kAMDVP9DecoderDLLName[] =
 #error Unsupported Windows CPU Architecture
 #endif
 
-const CLSID CLSID_AMDWebmMfVp9Dec =
+extern const GUID CLSID_AMDWebmMfVp9Dec =
 {
   0x2d2d728a,
   0x67d6,
@@ -410,6 +410,26 @@ FindD3D9BlacklistedDLL()
                                 "media.wmf.disable-d3d9-for-dlls");
 }
 
+const nsCString
+GetFoundD3D11BlacklistedDLL()
+{
+  if (sD3D11BlacklistingCache) {
+    return sD3D11BlacklistingCache->mBlacklistedDLL;
+  }
+
+  return nsCString();
+}
+
+const nsCString
+GetFoundD3D9BlacklistedDLL()
+{
+  if (sD3D9BlacklistingCache) {
+    return sD3D9BlacklistingCache->mBlacklistedDLL;
+  }
+
+  return nsCString();
+}
+
 class CreateDXVAManagerEvent : public Runnable
 {
 public:
@@ -424,12 +444,14 @@ public:
 
   NS_IMETHOD Run() override {
     NS_ASSERTION(NS_IsMainThread(), "Must be on main thread.");
+    const bool deblacklistingForTelemetry =
+      XRE_IsGPUProcess() && gfxPrefs::PDMWMFDeblacklistingForTelemetryInGPUProcess();
     nsACString* failureReason = &mFailureReason;
     nsCString secondFailureReason;
     if (mBackend == LayersBackend::LAYERS_D3D11 &&
       gfxPrefs::PDMWMFAllowD3D11() && IsWin8OrLater()) {
       const nsCString& blacklistedDLL = FindD3D11BlacklistedDLL();
-      if (!blacklistedDLL.IsEmpty()) {
+      if (!deblacklistingForTelemetry && !blacklistedDLL.IsEmpty()) {
         failureReason->AppendPrintf("D3D11 blacklisted with DLL %s",
                                     blacklistedDLL.get());
       } else {
@@ -446,7 +468,7 @@ public:
     }
 
     const nsCString& blacklistedDLL = FindD3D9BlacklistedDLL();
-    if (!blacklistedDLL.IsEmpty()) {
+    if (!deblacklistingForTelemetry && !blacklistedDLL.IsEmpty()) {
       mFailureReason.AppendPrintf("D3D9 blacklisted with DLL %s",
                                   blacklistedDLL.get());
     } else {
@@ -527,7 +549,13 @@ WMFVideoMFTManager::LoadAMDVP9Decoder()
   MOZ_ASSERT(mStreamType == VP9);
 
   RefPtr<MFTDecoder> decoder = new MFTDecoder();
-  // Check if we can load the AMD VP9 decoder.
+
+  HRESULT hr = decoder->Create(CLSID_AMDWebmMfVp9Dec);
+  if (SUCCEEDED(hr)) {
+    return decoder.forget();
+  }
+
+  // Check if we can load the AMD VP9 decoder using the path name.
   nsString path = GetProgramW6432Path();
   path.Append(kAMDVPXDecoderDLLPath);
   path.Append(kAMDVP9DecoderDLLName);
@@ -536,7 +564,7 @@ WMFVideoMFTManager::LoadAMDVP9Decoder()
   if (!decoderDLL) {
     return nullptr;
   }
-  HRESULT hr = decoder->Create(decoderDLL, CLSID_AMDWebmMfVp9Dec);
+  hr = decoder->Create(decoderDLL, CLSID_AMDWebmMfVp9Dec);
   NS_ENSURE_TRUE(SUCCEEDED(hr), nullptr);
   return decoder.forget();
 }
@@ -581,7 +609,8 @@ WMFVideoMFTManager::InitInternal()
   RefPtr<MFTDecoder> decoder;
 
   HRESULT hr;
-  if (mStreamType == VP9 && useDxva && mCheckForAMDDecoder) {
+  if (mStreamType == VP9 && useDxva && mCheckForAMDDecoder &&
+      MediaPrefs::PDMWMFAMDVP9DecoderEnabled()) {
     if ((decoder = LoadAMDVP9Decoder())) {
       mAMDVP9InUse = true;
     }

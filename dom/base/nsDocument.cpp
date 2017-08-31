@@ -99,6 +99,7 @@
 #include "nsIWebNavigation.h"
 #include "nsIScriptError.h"
 #include "nsISimpleEnumerator.h"
+#include "nsIRequestContext.h"
 #include "nsStyleSheetService.h"
 
 #include "nsNetUtil.h"     // for NS_NewURI
@@ -2330,6 +2331,18 @@ nsDocument::ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
 
     // XXXbz what does "just fine" mean exactly?  And given that there
     // is no nsDocShell::SetDocument, what is this talking about?
+
+    // Inform the associated request context about this load start so
+    // any of its internal load progress flags gets reset.
+    nsCOMPtr<nsIRequestContextService> rcsvc =
+      do_GetService("@mozilla.org/network/request-context-service;1");
+    if (rcsvc) {
+      nsCOMPtr<nsIRequestContext> rc;
+      rcsvc->GetRequestContextFromLoadGroup(aLoadGroup, getter_AddRefs(rc));
+      if (rc) {
+        rc->BeginLoad();
+      }
+    }
   }
 
   mLastModified.Truncate();
@@ -4402,6 +4415,7 @@ void
 nsDocument::AddOnDemandBuiltInUASheet(StyleSheet* aSheet)
 {
   MOZ_ASSERT(!mOnDemandBuiltInUASheets.Contains(aSheet));
+  MOZ_DIAGNOSTIC_ASSERT(aSheet->IsServo() == IsStyledByServo());
 
   // Prepend here so that we store the sheets in mOnDemandBuiltInUASheets in
   // the same order that they should end up in the style set.
@@ -4443,6 +4457,7 @@ nsDocument::GetIndexOfStyleSheet(const StyleSheet* aSheet) const
 void
 nsDocument::AddStyleSheetToStyleSets(StyleSheet* aSheet)
 {
+  MOZ_DIAGNOSTIC_ASSERT(aSheet->IsServo() == IsStyledByServo());
   nsCOMPtr<nsIPresShell> shell = GetShell();
   if (shell) {
     shell->StyleSet()->AddDocStyleSheet(aSheet, this);
@@ -4497,6 +4512,7 @@ void
 nsDocument::AddStyleSheet(StyleSheet* aSheet)
 {
   NS_PRECONDITION(aSheet, "null arg");
+  MOZ_DIAGNOSTIC_ASSERT(aSheet->IsServo() == IsStyledByServo());
   mStyleSheets.AppendElement(aSheet);
   aSheet->SetAssociatedDocument(this, StyleSheet::OwnedByDocument);
 
@@ -4562,6 +4578,7 @@ nsDocument::UpdateStyleSheets(nsTArray<RefPtr<StyleSheet>>& aOldSheets,
     // Now put the new one in its place.  If it's null, just ignore it.
     StyleSheet* newSheet = aNewSheets[i];
     if (newSheet) {
+      MOZ_DIAGNOSTIC_ASSERT(newSheet->IsServo() == IsStyledByServo());
       mStyleSheets.InsertElementAt(oldIndex, newSheet);
       newSheet->SetAssociatedDocument(this, StyleSheet::OwnedByDocument);
       if (newSheet->IsApplicable()) {
@@ -4580,6 +4597,7 @@ nsDocument::InsertStyleSheetAt(StyleSheet* aSheet, int32_t aIndex)
 {
   NS_PRECONDITION(aSheet, "null ptr");
 
+  MOZ_DIAGNOSTIC_ASSERT(aSheet->IsServo() == IsStyledByServo());
   mStyleSheets.InsertElementAt(aIndex, aSheet);
 
   aSheet->SetAssociatedDocument(this, StyleSheet::OwnedByDocument);
@@ -4599,6 +4617,7 @@ nsDocument::SetStyleSheetApplicableState(StyleSheet* aSheet,
   NS_PRECONDITION(aSheet, "null arg");
 
   // If we're actually in the document style sheet list
+  MOZ_DIAGNOSTIC_ASSERT(aSheet->IsServo() == IsStyledByServo());
   if (mStyleSheets.IndexOf(aSheet) != mStyleSheets.NoIndex) {
     if (aApplicable) {
       AddStyleSheetToStyleSets(aSheet);
@@ -9607,6 +9626,7 @@ nsDocument::CloneDocHelper(nsDocument* clone, bool aPreallocateChildren) const
   clone->mContentLanguage = mContentLanguage;
   clone->SetContentTypeInternal(GetContentTypeInternal());
   clone->mSecurityInfo = mSecurityInfo;
+  clone->mStyleBackendType = mStyleBackendType;
 
   // State from nsDocument
   clone->mType = mType;
@@ -10327,6 +10347,7 @@ nsIDocument::CreateStaticClone(nsIDocShell* aCloneContainer)
 
       clonedDoc->mOriginalDocument->mStaticCloneCount++;
 
+      MOZ_ASSERT(GetStyleBackendType() == clonedDoc->GetStyleBackendType());
       int32_t sheetsCount = GetNumberOfStyleSheets();
       for (int32_t i = 0; i < sheetsCount; ++i) {
         RefPtr<StyleSheet> sheet = GetStyleSheetAt(i);

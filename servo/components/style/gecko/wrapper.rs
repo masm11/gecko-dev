@@ -318,17 +318,6 @@ impl<'ln> TNode for GeckoNode<'ln> {
     fn is_in_doc(&self) -> bool {
         unsafe { bindings::Gecko_IsInDocument(self.0) }
     }
-
-    fn needs_dirty_on_viewport_size_changed(&self) -> bool {
-        // Gecko's node doesn't have the DIRTY_ON_VIEWPORT_SIZE_CHANGE flag,
-        // so we force them to be dirtied on viewport size change, regardless if
-        // they use viewport percentage size or not.
-        // TODO(shinglyu): implement this in Gecko: https://github.com/servo/servo/pull/11890
-        true
-    }
-
-    // TODO(shinglyu): implement this in Gecko: https://github.com/servo/servo/pull/11890
-    unsafe fn set_dirty_on_viewport_size_changed(&self) {}
 }
 
 /// A wrapper on top of two kind of iterators, depending on the parent being
@@ -1182,7 +1171,9 @@ impl<'le> TElement for GeckoElement<'le> {
         // level native anonymous content subtree roots, since they're not
         // really roots from the style fixup perspective.  Checking that we
         // are NAC handles both cases.
-        self.is_native_anonymous()
+        self.is_native_anonymous() &&
+        (self.is_root_of_native_anonymous_subtree() ||
+         self.implemented_pseudo_element().is_some())
     }
 
     unsafe fn set_selector_flags(&self, flags: ElementSelectorFlags) {

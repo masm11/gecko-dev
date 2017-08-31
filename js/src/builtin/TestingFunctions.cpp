@@ -18,6 +18,7 @@
 #include "jscntxt.h"
 #include "jsfriendapi.h"
 #include "jsgc.h"
+#include "jsiter.h"
 #include "jsobj.h"
 #include "jsprf.h"
 #include "jswrapper.h"
@@ -3146,8 +3147,7 @@ FindPath(JSContext* cx, unsigned argc, Value* vp)
         if (!cx->compartment()->wrap(cx, &wrapped))
             return false;
 
-        if (!JS_DefineProperty(cx, obj, "node", wrapped,
-                               JSPROP_ENUMERATE, nullptr, nullptr))
+        if (!JS_DefineProperty(cx, obj, "node", wrapped, JSPROP_ENUMERATE))
             return false;
 
         heaptools::EdgeName edgeName = Move(edges[i]);
@@ -3157,7 +3157,7 @@ FindPath(JSContext* cx, unsigned argc, Value* vp)
             return false;
         mozilla::Unused << edgeName.release(); // edgeStr acquired ownership
 
-        if (!JS_DefineProperty(cx, obj, "edge", edgeStr, JSPROP_ENUMERATE, nullptr, nullptr))
+        if (!JS_DefineProperty(cx, obj, "edge", edgeStr, JSPROP_ENUMERATE))
             return false;
 
         result->setDenseElement(length - i - 1, ObjectValue(*obj));
@@ -4428,6 +4428,17 @@ IsConstructor(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+static bool
+IsLegacyIterator(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (args.length() < 1)
+        args.rval().setBoolean(false);
+    else
+        args.rval().setBoolean(IsLegacyIterator(args[0]));
+    return true;
+}
+
 static const JSFunctionSpecWithHelp TestingFunctions[] = {
     JS_FN_HELP("gc", ::GC, 0, 0,
 "gc([obj] | 'zone' [, 'shrinking'])",
@@ -5018,6 +5029,10 @@ gc::ZealModeHelpText),
     JS_FN_HELP("isConstructor", IsConstructor, 1, 0,
 "isConstructor(value)",
 "  Returns whether the value is considered IsConstructor.\n"),
+
+    JS_FN_HELP("isLegacyIterator", IsLegacyIterator, 1, 0,
+"isLegacyIterator(value)",
+"  Returns whether the value is considered is a legacy iterator.\n"),
 
     JS_FS_HELP_END
 };
