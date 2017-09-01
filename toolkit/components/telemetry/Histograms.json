@@ -10837,6 +10837,17 @@
     "n_buckets": 10,
     "description": "The number of times a sync successfully completed in this session"
   },
+  "WEAVE_LOGIN_FAILED_FOR": {
+    "record_in_processes": ["main"],
+    "expires_in_version": "65",
+    "alert_emails": ["sync-dev@mozilla.org"],
+    "kind": "exponential",
+    "high": 20000,
+    "n_buckets": 100,
+    "releaseChannelCollection": "opt-out",
+    "bug_numbers": [1375635],
+    "description": "The number of minutes the user was in a bad login state."
+  },
   "WEAVE_WIPE_SERVER_SUCCEEDED": {
     "record_in_processes": ["main", "content"],
     "expires_in_version": "55",
@@ -13601,16 +13612,5 @@
     "n_values":  10,
     "bug_numbers": [1393392],
     "description": "The runtime status, sent when a remote HW video decoder is shutdown, of previously-blacklisted driver: 0:remote HW-decoding and GPU process didn't crash, 1:remote HW-decoding and GPU process crashed. The histogram is keyed by the blacklisted driver name."
-  },
-  "FORM_FILLING_REQUIRED_TIME_MS": {
-    "record_in_processes": ["main"],
-    "alert_emails": ["autofill@lists.mozilla.org", "jcheng@mozilla.com", "chsiang@mozilla.com"],
-    "expires_in_version": "60",
-    "kind": "exponential",
-    "high": 300000,
-    "n_buckets": 22,
-    "keyed": true,
-    "bug_numbers": [1341569],
-    "description": "Milliseconds between starting to fill an autofill-eligible form field and submitting the form"
   }
 }

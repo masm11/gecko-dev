@@ -688,8 +688,7 @@ nsTableFrame::CreateAnonymousColGroupFrame(nsTableColGroupType aColGroupType)
 
   RefPtr<nsStyleContext> colGroupStyle;
   colGroupStyle = shell->StyleSet()->
-    ResolveInheritingAnonymousBoxStyle(nsCSSAnonBoxes::tableColGroup,
-                                       mStyleContext);
+    ResolveNonInheritingAnonymousBoxStyle(nsCSSAnonBoxes::tableColGroup);
   // Create a col group frame
   nsIFrame* newFrame = NS_NewTableColGroupFrame(shell, colGroupStyle);
   ((nsTableColGroupFrame *)newFrame)->SetColType(aColGroupType);
@@ -1377,6 +1376,10 @@ PaintRowBackground(nsTableRowFrame* aRow,
 {
   // Compute background rect by iterating all cell frame.
   for (nsTableCellFrame* cell = aRow->GetFirstCell(); cell; cell = cell->GetNextCell()) {
+    if (!cell->ShouldPaintBackground(aBuilder)) {
+      continue;
+    }
+
     auto cellRect = cell->GetRectRelativeToSelf() + cell->GetNormalPosition() + aOffset;
     if (!aBuilder->GetDirtyRect().Intersects(cellRect)) {
       continue;
@@ -1418,6 +1421,10 @@ PaintRowGroupBackgroundByColIdx(nsTableRowGroupFrame* aRowGroup,
       continue;
     }
     for (nsTableCellFrame* cell = row->GetFirstCell(); cell; cell = cell->GetNextCell()) {
+      if (!cell->ShouldPaintBackground(aBuilder)) {
+        continue;
+      }
+
       int32_t curColIdx;
       cell->GetColIndex(curColIdx);
       if (aColIdx.Contains(curColIdx)) {
@@ -1511,89 +1518,90 @@ nsTableFrame::DisplayGenericTablePart(nsDisplayListBuilder* aBuilder,
                                       DisplayGenericTablePartTraversal aTraversal)
 {
   bool isVisible = aFrame->IsVisibleForPainting(aBuilder);
-  bool isColumn = aFrame->IsTableColFrame();
-  // If we have an anonymous column in the AppendAnonymousColFrames sense, it
-  // might think it's visible for painting (due to not inheriting its colgroup's
-  // styles) while the colgroup as a whole is actually not visible for painting
-  // because it has hidden visibility.  In that situation we should also treat
-  // the column as not visible, because otherwise hit-testing can get a bit
-  // confused.
-  //
-  // XXXbz It's not clear whether anonymous columns and column groups should
-  // ever affect hit-testing at all.  See
-  // https://github.com/w3c/csswg-drafts/issues/1763 which might result in them
-  // not existing conceptually and hence not affecting hit-testing.
-  if (isVisible && isColumn &&
-      aFrame->StyleContext()->GetPseudo() == nsCSSAnonBoxes::tableCol &&
-      !aFrame->GetParent()->StyleVisibility()->IsVisible()) {
-    isVisible = false;
-  }
-  if (isVisible) {
+  bool isTable = aFrame->IsTableFrame();
+
+  // Note that we UpdateForFrameBackground() even if we're not visible, unless
+  // we're a table frame, because our backgrounds may paint anyway if the _cell_
+  // is visible.
+  if (isVisible || !isTable) {
     nsDisplayTableItem* currentItem = aBuilder->GetCurrentTableItem();
     // currentItem may be null, when none of the table parts have a
     // background or border
     if (currentItem) {
       currentItem->UpdateForFrameBackground(aFrame);
     }
+  }
+
+  if (isVisible) {
+    // XXXbz should box-shadow for rows/rowgroups/columns/colgroups get painted
+    // just because we're visible?  Or should it depend on the cell visibility
+    // when we're not the whole table?
 
     // Paint the outset box-shadows for the table frames
-    bool hasBoxShadow = aFrame->StyleEffects()->mBoxShadow != nullptr;
-    if (hasBoxShadow) {
+    if (aFrame->StyleEffects()->mBoxShadow) {
       aLists.BorderBackground()->AppendNewToTop(
         new (aBuilder) nsDisplayBoxShadowOuter(aBuilder, aFrame));
     }
+  }
 
-    if (aFrame->IsTableRowGroupFrame()) {
-      nsTableRowGroupFrame* rowGroup = static_cast<nsTableRowGroupFrame*>(aFrame);
-      PaintRowGroupBackground(rowGroup, aFrame, aBuilder, aLists);
-    } else if (aFrame->IsTableRowFrame()) {
-      nsTableRowFrame* row = static_cast<nsTableRowFrame*>(aFrame);
-      PaintRowBackground(row, aFrame, aBuilder, aLists);
-    } else if (aFrame->IsTableColGroupFrame()) {
-      // Compute background rect by iterating all cell frame.
-      nsTableColGroupFrame* colGroup = static_cast<nsTableColGroupFrame*>(aFrame);
-      // Collecting column index.
-      AutoTArray<int32_t, 1> colIdx;
-      for (nsTableColFrame* col = colGroup->GetFirstColumn(); col; col = col->GetNextCol()) {
-        colIdx.AppendElement(col->GetColIndex());
-      }
-
-      nsTableFrame* table = colGroup->GetTableFrame();
-      RowGroupArray rowGroups;
-      table->OrderRowGroups(rowGroups);
-      for (nsTableRowGroupFrame* rowGroup : rowGroups) {
-        auto offset = rowGroup->GetNormalPosition() - colGroup->GetNormalPosition();
-        if (!aBuilder->GetDirtyRect().Intersects(nsRect(offset, rowGroup->GetSize()))) {
-          continue;
-        }
-        PaintRowGroupBackgroundByColIdx(rowGroup, aFrame, aBuilder, aLists, colIdx, offset);
-      }
-    } else if (isColumn) {
-      // Compute background rect by iterating all cell frame.
-      nsTableColFrame* col = static_cast<nsTableColFrame*>(aFrame);
-      AutoTArray<int32_t, 1> colIdx;
+  // Background visibility for rows, rowgroups, columns, colgroups depends on
+  // the visibility of the _cell_, not of the row/col(group).
+  if (aFrame->IsTableRowGroupFrame()) {
+    nsTableRowGroupFrame* rowGroup = static_cast<nsTableRowGroupFrame*>(aFrame);
+    PaintRowGroupBackground(rowGroup, aFrame, aBuilder, aLists);
+  } else if (aFrame->IsTableRowFrame()) {
+    nsTableRowFrame* row = static_cast<nsTableRowFrame*>(aFrame);
+    PaintRowBackground(row, aFrame, aBuilder, aLists);
+  } else if (aFrame->IsTableColGroupFrame()) {
+    // Compute background rect by iterating all cell frame.
+    nsTableColGroupFrame* colGroup = static_cast<nsTableColGroupFrame*>(aFrame);
+    // Collecting column index.
+    AutoTArray<int32_t, 1> colIdx;
+    for (nsTableColFrame* col = colGroup->GetFirstColumn(); col; col = col->GetNextCol()) {
       colIdx.AppendElement(col->GetColIndex());
-
-      nsTableFrame* table = col->GetTableFrame();
-      RowGroupArray rowGroups;
-      table->OrderRowGroups(rowGroups);
-      for (nsTableRowGroupFrame* rowGroup : rowGroups) {
-        auto offset = rowGroup->GetNormalPosition() -
-                      col->GetNormalPosition() -
-                      col->GetTableColGroupFrame()->GetNormalPosition();
-        if (!aBuilder->GetDirtyRect().Intersects(nsRect(offset, rowGroup->GetSize()))) {
-          continue;
-        }
-        PaintRowGroupBackgroundByColIdx(rowGroup, aFrame, aBuilder, aLists, colIdx, offset);
-      }
-    } else {
-      nsDisplayBackgroundImage::AppendBackgroundItemsToTop(aBuilder, aFrame,
-                                                           aFrame->GetRectRelativeToSelf(),
-                                                           aLists.BorderBackground());
     }
 
+    nsTableFrame* table = colGroup->GetTableFrame();
+    RowGroupArray rowGroups;
+    table->OrderRowGroups(rowGroups);
+    for (nsTableRowGroupFrame* rowGroup : rowGroups) {
+      auto offset = rowGroup->GetNormalPosition() - colGroup->GetNormalPosition();
+      if (!aBuilder->GetDirtyRect().Intersects(nsRect(offset, rowGroup->GetSize()))) {
+        continue;
+      }
+      PaintRowGroupBackgroundByColIdx(rowGroup, aFrame, aBuilder, aLists, colIdx, offset);
+    }
+  } else if (aFrame->IsTableColFrame()) {
+    // Compute background rect by iterating all cell frame.
+    nsTableColFrame* col = static_cast<nsTableColFrame*>(aFrame);
+    AutoTArray<int32_t, 1> colIdx;
+    colIdx.AppendElement(col->GetColIndex());
+
+    nsTableFrame* table = col->GetTableFrame();
+    RowGroupArray rowGroups;
+    table->OrderRowGroups(rowGroups);
+    for (nsTableRowGroupFrame* rowGroup : rowGroups) {
+      auto offset = rowGroup->GetNormalPosition() -
+                    col->GetNormalPosition() -
+                    col->GetTableColGroupFrame()->GetNormalPosition();
+      if (!aBuilder->GetDirtyRect().Intersects(nsRect(offset, rowGroup->GetSize()))) {
+        continue;
+      }
+      PaintRowGroupBackgroundByColIdx(rowGroup, aFrame, aBuilder, aLists, colIdx, offset);
+    }
+  } else if (isVisible) {
+    nsDisplayBackgroundImage::AppendBackgroundItemsToTop(aBuilder, aFrame,
+                                                         aFrame->GetRectRelativeToSelf(),
+                                                         aLists.BorderBackground());
+  }
+
+  if (isVisible) {
+    // XXXbz should box-shadow for rows/rowgroups/columns/colgroups get painted
+    // just because we're visible?  Or should it depend on the cell visibility
+    // when we're not the whole table?
+
     // Paint the inset box-shadows for the table frames
-    if (hasBoxShadow) {
+    if (aFrame->StyleEffects()->mBoxShadow) {
       aLists.BorderBackground()->AppendNewToTop(
         new (aBuilder) nsDisplayBoxShadowInner(aBuilder, aFrame));
     }
@@ -1602,7 +1610,7 @@ nsTableFrame::DisplayGenericTablePart(nsDisplayListBuilder* aBuilder,
   aTraversal(aBuilder, aFrame, aLists);
 
   if (isVisible) {
-    if (aFrame->IsTableFrame()) {
+    if (isTable) {
       nsTableFrame* table = static_cast<nsTableFrame*>(aFrame);
       // In the collapsed border model, overlay all collapsed borders.
       if (table->IsBorderCollapse()) {
@@ -8042,27 +8050,6 @@ nsTableFrame::AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult)
              "What happened to our parent?");
   aResult.AppendElement(
     OwnedAnonBox(wrapper, &UpdateStyleOfOwnedAnonBoxesForTableWrapper));
-
-  // We may also have an anonymous colgroup that we're responsible for.
-  // Specifically, we can have three types of colgroup frames: (A) corresponding
-  // to actual elements with "display: table-column-group", (B) wrapping runs of
-  // "display: table-column" kids, and (C) one colgroup frame added at the end
-  // to hold the anonymous colframes we need so each cell has an associated
-  // colframe.
-  //
-  // These types of colgroups are supposed to correspond to the values of the
-  // nsTableColGroupType enum: type (A) to eColGroupContent, type (B) to
-  // eColGroupAnonymousCol, and type (C) to eColGroupAnonymousCell.  But we
-  // never actually set eColGroupAnonymousCol on any colgroups right now; see
-  // bug 1387568.  In any case, eColGroupAnonymousCell works correctly to detect
-  // colgroups of type (C), which are the ones we want to restyle here.  Type
-  // (A) will be restyled via their element, and type (B) via the machinery for
-  // restyling wrapper anonymous frames.
-  auto colGroupFrame =
-    static_cast<nsTableColGroupFrame*>(mColGroups.LastChild());
-  if (colGroupFrame && colGroupFrame->GetColType() == eColGroupAnonymousCell) {
-    aResult.AppendElement(colGroupFrame);
-  }
 }
 
 /* static */ void

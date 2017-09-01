@@ -12,10 +12,10 @@ Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("chrome://marionette/content/assert.js");
 Cu.import("chrome://marionette/content/atom.js");
 const {
-  error,
   InvalidSelectorError,
   JavaScriptError,
   NoSuchElementError,
+  pprint,
   StaleElementReferenceError,
 } = Cu.import("chrome://marionette/content/error.js", {});
 Cu.import("chrome://marionette/content/wait.js");
@@ -180,7 +180,7 @@ element.Store = class {
 
     if (element.isStale(el)) {
       throw new StaleElementReferenceError(
-          error.pprint`The element reference of ${el} stale; ` +
+          pprint`The element reference of ${el} stale; ` +
               "either the element is no longer attached to the DOM " +
               "or the document has been refreshed");
     }
@@ -624,8 +624,7 @@ element.generateUUID = function() {
  * Determines if <var>el</var> is stale.
  *
  * A stale element is an element no longer attached to the DOM or which
- * <code>ownerDocument</coded> is not the same as {@link WindowProxy}'s
- * document.
+ * node document is not the active document.
  *
  * @param {Element} el
  *     DOM element to check for staleness.
@@ -636,8 +635,11 @@ element.generateUUID = function() {
 element.isStale = function(el) {
   let doc = el.ownerDocument;
   let win = doc.defaultView;
-  let sameDoc = el.ownerDocument === win.document;
-  return !sameDoc || !el.isConnected;
+
+  if (!win || el.ownerDocument !== win.document) {
+    return true;
+  }
+  return !el.isConnected;
 };
 
 /**

@@ -548,11 +548,7 @@ const gStoragePressureObserver = {
           // The advanced subpanes are only supported in the old organization, which will
           // be removed by bug 1349689.
           let win = gBrowser.ownerGlobal;
-          if (Services.prefs.getBoolPref("browser.preferences.useOldOrganization")) {
-            win.openAdvancedPreferences("networkTab", {origin: "storagePressure"});
-          } else {
-            win.openPreferences("panePrivacy", {origin: "storagePressure"});
-          }
+          win.openPreferences("panePrivacy", { origin: "storagePressure" });
         }
       });
     }
@@ -1379,6 +1375,25 @@ var gBrowserInit = {
 
     gRemoteControl.updateVisualCue(Marionette.running);
 
+    // If we are given a tab to swap in, take care of it before first paint to
+    // avoid an about:blank flash.
+    let tabToOpen = window.arguments && window.arguments[0];
+    if (tabToOpen instanceof XULElement) {
+      // Clear the reference to the tab from the arguments array.
+      window.arguments[0] = null;
+
+      // Stop the about:blank load
+      gBrowser.stop();
+      // make sure it has a docshell
+      gBrowser.docShell;
+
+      try {
+        gBrowser.swapBrowsersAndCloseOther(gBrowser.selectedTab, tabToOpen);
+      } catch (e) {
+        Cu.reportError(e);
+      }
+    }
+
     // Wait until chrome is painted before executing code not critical to making the window visible
     this._boundDelayedStartup = this._delayedStartup.bind(this);
     window.addEventListener("MozAfterPaint", this._boundDelayedStartup);
@@ -1605,6 +1620,8 @@ var gBrowserInit = {
         return;
       }
 
+      // We don't check if uriToLoad is a XULElement because this case has
+      // already been handled before first paint, and the argument cleared.
       if (uriToLoad instanceof Ci.nsIArray) {
         let count = uriToLoad.length;
         let specs = [];
@@ -1622,39 +1639,6 @@ var gBrowserInit = {
             triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
           });
         } catch (e) {}
-      } else if (uriToLoad instanceof XULElement) {
-        // swap the given tab with the default about:blank tab and then close
-        // the original tab in the other window.
-        let tabToOpen = uriToLoad;
-
-        // If this tab was passed as a window argument, clear the
-        // reference to it from the arguments array.
-        if (window.arguments[0] == tabToOpen) {
-          window.arguments[0] = null;
-        }
-
-        // Stop the about:blank load
-        gBrowser.stop();
-        // make sure it has a docshell
-        gBrowser.docShell;
-
-        // We must set usercontextid before updateBrowserRemoteness()
-        // so that the newly created remote tab child has correct usercontextid
-        if (tabToOpen.hasAttribute("usercontextid")) {
-          let usercontextid = tabToOpen.getAttribute("usercontextid");
-          gBrowser.selectedBrowser.setAttribute("usercontextid", usercontextid);
-        }
-
-        try {
-          // Make sure selectedBrowser has the same remote settings as the one
-          // we are swapping in.
-          gBrowser.updateBrowserRemoteness(gBrowser.selectedBrowser,
-                                           tabToOpen.linkedBrowser.isRemoteBrowser,
-                                           { remoteType: tabToOpen.linkedBrowser.remoteType });
-          gBrowser.swapBrowsersAndCloseOther(gBrowser.selectedTab, tabToOpen);
-        } catch (e) {
-          Cu.reportError(e);
-        }
       } else if (window.arguments.length >= 3) {
         // window.arguments[2]: referrer (nsIURI | string)
         //                 [3]: postData (nsIInputStream)
@@ -6532,13 +6516,7 @@ var OfflineApps = {
   },
 
   manage() {
-    // The advanced subpanes are only supported in the old organization, which will
-    // be removed by bug 1349689.
-    if (Services.prefs.getBoolPref("browser.preferences.useOldOrganization")) {
-      openAdvancedPreferences("networkTab", {origin: "offlineApps"});
-    } else {
-      openPreferences("panePrivacy", {origin: "offlineApps"});
-    }
+    openPreferences("panePrivacy", { origin: "offlineApps" });
   },
 
   receiveMessage(msg) {

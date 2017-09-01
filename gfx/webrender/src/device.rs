@@ -569,19 +569,23 @@ impl<T> GpuFrameProfile<T> {
     }
 
     fn done_sampler(&mut self) {
+        /* FIXME: samplers crash on MacOS
         debug_assert!(self.inside_frame);
         if self.samplers.pending != 0 {
             self.gl.end_query(gl::SAMPLES_PASSED);
             self.samplers.pending = 0;
         }
+        */
     }
 
-    fn add_sampler(&mut self, tag: T) where T: NamedTag {
+    fn add_sampler(&mut self, _tag: T) where T: NamedTag {
+        /* FIXME: samplers crash on MacOS
         self.done_sampler();
 
         if let Some(query) = self.samplers.add(GpuSampler { tag, count: 0 }) {
             self.gl.begin_query(gl::SAMPLES_PASSED, query);
         }
+        */
     }
 
     fn is_valid(&self) -> bool {
@@ -1172,6 +1176,7 @@ impl Device {
 
     pub fn free_texture_storage(&mut self, texture: &mut Texture) {
         debug_assert!(self.inside_frame);
+        debug_assert_eq!(self.bound_pbo, PBOId(0));
 
         if texture.format == ImageFormat::Invalid {
             return;
@@ -1369,7 +1374,7 @@ impl Device {
 
     pub fn update_pbo_data<T>(&mut self, data: &[T]) {
         debug_assert!(self.inside_frame);
-        debug_assert!(self.bound_pbo.0 != 0);
+        debug_assert_ne!(self.bound_pbo, PBOId(0));
 
         gl::buffer_data(&*self.gl,
                         gl::PIXEL_UNPACK_BUFFER,
@@ -1379,7 +1384,7 @@ impl Device {
 
     pub fn orphan_pbo(&mut self, new_size: usize) {
         debug_assert!(self.inside_frame);
-        debug_assert!(self.bound_pbo.0 != 0);
+        debug_assert_ne!(self.bound_pbo, PBOId(0));
 
         self.gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER,
                                     new_size as isize,
