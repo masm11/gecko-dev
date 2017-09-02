@@ -120,7 +120,7 @@ private:
 private:
   explicit Interceptor(IInterceptorSink* aSink);
   ~Interceptor();
-  HRESULT GetInitialInterceptorForIID(detail::LiveSetAutoLock& aLock,
+  HRESULT GetInitialInterceptorForIID(detail::LiveSetAutoLock& aLiveSetLock,
                                       REFIID aTargetIid,
                                       STAUniquePtr<IUnknown> aTarget,
                                       void** aOutInterface);
@@ -129,7 +129,10 @@ private:
   HRESULT ThreadSafeQueryInterface(REFIID aIid,
                                    IUnknown** aOutInterface) override;
   HRESULT CreateInterceptor(REFIID aIid, IUnknown* aOuter, IUnknown** aOutput);
-  REFIID MarshalAs(REFIID aIid) const;
+  HRESULT PublishTarget(detail::LiveSetAutoLock& aLiveSetLock,
+                        RefPtr<IUnknown> aInterceptor,
+                        REFIID aTargetIid,
+                        STAUniquePtr<IUnknown> aTarget);
 
 private:
   InterceptorTargetPtr<IUnknown>  mTarget;

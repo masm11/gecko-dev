@@ -681,13 +681,6 @@ nsGenericDOMDataNode::GetChildAt(uint32_t aIndex) const
   return nullptr;
 }
 
-nsIContent * const *
-nsGenericDOMDataNode::GetChildArray(uint32_t* aChildCount) const
-{
-  *aChildCount = 0;
-  return nullptr;
-}
-
 int32_t
 nsGenericDOMDataNode::IndexOf(const nsINode* aPossibleChild) const
 {
@@ -877,6 +870,9 @@ nsGenericDOMDataNode::SplitData(uint32_t aOffset, nsIContent** aReturn,
   if (!newContent) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+  // nsRange expects the CharacterDataChanged notification is followed
+  // by an insertion of |newContent|. If you change this code,
+  // make sure you make the appropriate changes in nsRange.
   newContent->SetText(cutText, true); // XXX should be false?
 
   CharacterDataChangeInfo::Details details = {

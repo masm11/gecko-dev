@@ -158,6 +158,11 @@ WebRenderLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
 bool
 WebRenderLayerManager::BeginTransaction()
 {
+  if (!WrBridge()->IPCOpen()) {
+    gfxCriticalNote << "IPC Channel is already torn down unexpectedly\n";
+    return false;
+  }
+
   // Increment the paint sequence number even if test logging isn't
   // enabled in this process; it may be enabled in the parent process,
   // and the parent process expects unique sequence numbers.
@@ -730,7 +735,12 @@ WebRenderLayerManager::EndTransactionInternal(DrawPaintedLayerCallback aCallback
           mLayerScrollData.back().SetEventRegionsOverride(EventRegionsOverride::ForceDispatchToContent);
         }
       }
-      if (Maybe<ScrollMetadata> rootMetadata = nsLayoutUtils::GetRootMetadata(aDisplayListBuilder, nullptr, ContainerLayerParameters())) {
+      RefPtr<WebRenderLayerManager> self(this);
+      auto callback = [self](FrameMetrics::ViewID aScrollId) -> bool {
+        return self->mScrollData.HasMetadataFor(aScrollId);
+      };
+      if (Maybe<ScrollMetadata> rootMetadata = nsLayoutUtils::GetRootMetadata(
+            aDisplayListBuilder, nullptr, ContainerLayerParameters(), callback)) {
         mLayerScrollData.back().AppendScrollMetadata(mScrollData, rootMetadata.ref());
       }
       // Append the WebRenderLayerScrollData items into WebRenderScrollData

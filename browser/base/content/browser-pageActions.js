@@ -182,33 +182,9 @@ var BrowserPageActions = {
       return null;
     }
 
-    // Before creating the panel, find the best anchor node for it because we'll
-    // bail if there isn't one.  Try each of the following nodes in order, using
-    // the first that's visible.
-    let anchorNode = null;
-    let potentialAnchorNodeIDs = [
-      action.anchorIDOverride || null,
-      this._urlbarButtonNodeIDForActionID(action.id),
-      this.mainButtonNode.id,
-      "identity-icon",
-    ];
-    let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindowUtils);
-    for (let id of potentialAnchorNodeIDs) {
-      if (id) {
-        let node = document.getElementById(id);
-        if (node && !node.hidden) {
-          let bounds = dwu.getBoundsWithoutFlushing(node);
-          if (bounds.height > 0 && bounds.width > 0) {
-            anchorNode = node;
-            break;
-          }
-        }
-      }
-    }
-    if (!anchorNode) {
-      throw new Error(`PageActions: No anchor node for '${action.id}'`);
-    }
+    // Before creating the panel, get the anchor node for it because it'll throw
+    // if there isn't one (which shouldn't happen, but still).
+    let anchorNode = this.panelAnchorNodeForAction(action);
 
     panelNode = document.createElement("panel");
     panelNode.id = this._activatedActionPanelID;
@@ -220,6 +196,11 @@ var BrowserPageActions = {
     panelNode.setAttribute("noautofocus", "true");
     panelNode.setAttribute("tabspecific", "true");
     panelNode.setAttribute("photon", "true");
+
+    // For tests.
+    if (this._disableActivatedActionPanelAnimation) {
+      panelNode.setAttribute("animate", "false");
+    }
 
     let panelViewNode = null;
     let iframeNode = null;
@@ -265,6 +246,30 @@ var BrowserPageActions = {
     }
 
     return panelNode;
+  },
+
+  panelAnchorNodeForAction(action) {
+    // Try each of the following nodes in order, using the first that's visible.
+    let potentialAnchorNodeIDs = [
+      action.anchorIDOverride || null,
+      this._urlbarButtonNodeIDForActionID(action.id),
+      this.mainButtonNode.id,
+      "identity-icon",
+    ];
+    let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                    .getInterface(Ci.nsIDOMWindowUtils);
+    for (let id of potentialAnchorNodeIDs) {
+      if (id) {
+        let node = document.getElementById(id);
+        if (node && !node.hidden) {
+          let bounds = dwu.getBoundsWithoutFlushing(node);
+          if (bounds.height > 0 && bounds.width > 0) {
+            return node;
+          }
+        }
+      }
+    }
+    throw new Error(`PageActions: No anchor node for '${action.id}'`);
   },
 
   get activatedActionPanelNode() {
@@ -695,18 +700,10 @@ var BrowserPageActionFeedback = {
   },
 
   show(action, event) {
-    this.feedbackLabel.textContent = this.panelNode.getAttribute(action + "Feedback");
+    this.feedbackLabel.textContent = this.panelNode.getAttribute(action.id + "Feedback");
     this.panelNode.hidden = false;
 
-    let anchor = BrowserPageActions.mainButtonNode;
-    if (event.target.classList.contains("urlbar-icon")) {
-      let id = BrowserPageActions._urlbarButtonNodeIDForActionID(action);
-      let node = document.getElementById(id);
-      if (node) {
-        anchor = node;
-      }
-    }
-
+    let anchor = BrowserPageActions.panelAnchorNodeForAction(action);
     this.panelNode.openPopup(anchor, {
       position: "bottomcenter topright",
       triggerEvent: event,
@@ -760,7 +757,8 @@ BrowserPageActions.copyURL = {
     Cc["@mozilla.org/widget/clipboardhelper;1"]
       .getService(Ci.nsIClipboardHelper)
       .copyString(gURLBar.makeURIReadable(gBrowser.selectedBrowser.currentURI).displaySpec);
-    BrowserPageActionFeedback.show("copyURL", event);
+    let action = PageActions.actionForID("copyURL");
+    BrowserPageActionFeedback.show(action, event);
   },
 };
 
@@ -806,6 +804,7 @@ BrowserPageActions.sendToDevice = {
     let title = browser.contentTitle;
 
     let bodyNode = panelViewNode.firstChild;
+    let panelNode = panelViewNode.closest("panel");
 
     // This is on top because it also clears the device list between state
     // changes.
@@ -820,10 +819,14 @@ BrowserPageActions.sendToDevice = {
       }
       item.setAttribute("tooltiptext", name);
       item.addEventListener("command", event => {
+        if (panelNode) {
+          panelNode.hidePopup();
+        }
         // There are items in the subview that don't represent devices: "Sign
         // in", "Learn about Sync", etc.  Device items will be .sendtab-target.
         if (event.target.classList.contains("sendtab-target")) {
-          BrowserPageActionFeedback.show("sendToDevice", event);
+          let action = PageActions.actionForID("sendToDevice");
+          BrowserPageActionFeedback.show(action, event);
         }
       });
       return item;

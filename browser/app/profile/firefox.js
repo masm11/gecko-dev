@@ -675,6 +675,10 @@ pref("accessibility.typeaheadfind.timeout", 5000);
 pref("accessibility.typeaheadfind.linksonly", false);
 pref("accessibility.typeaheadfind.flashBar", 1);
 
+// Accessibility indicator preferences such as support URL, enabled flag.
+pref("accessibility.support.url", "https://support.mozilla.org/%LOCALE%/kb/accessibility-services");
+pref("accessibility.indicator.enabled", true);
+
 // Tracks when accessibility is loaded into the previous session.
 pref("accessibility.loadedInLastSession", false);
 
@@ -1515,11 +1519,7 @@ pref("experiments.manifest.uri", "https://telemetry-experiment.cdn.mozilla.net/m
 pref("experiments.supported", true);
 
 // Ping Centre Telemetry settings.
-#ifdef NIGHTLY_BUILD
 pref("browser.ping-centre.telemetry", true);
-#else
-pref("browser.ping-centre.telemetry", false);
-#endif
 pref("browser.ping-centre.log", false);
 pref("browser.ping-centre.staging.endpoint", "https://onyx_tiles.stage.mozaws.net/v3/links/ping-centre");
 pref("browser.ping-centre.production.endpoint", "https://tiles.services.mozilla.com/v3/links/ping-centre");
@@ -1720,7 +1720,7 @@ pref("extensions.formautofill.loglevel", "Warn");
 pref("browser.sessionstore.restore_tabs_lazily", true);
 
 // Enable safebrowsing v4 tables (suffixed by "-proto") update.
-pref("urlclassifier.malwareTable", "goog-malware-proto,goog-unwanted-proto,test-malware-simple,test-unwanted-simple,test-harmful-simple");
+pref("urlclassifier.malwareTable", "goog-malware-proto,goog-unwanted-proto,test-harmful-simple,test-malware-simple,test-unwanted-simple");
 #ifdef MOZILLA_OFFICIAL
 pref("urlclassifier.phishTable", "goog-phish-proto,test-phish-simple");
 #else

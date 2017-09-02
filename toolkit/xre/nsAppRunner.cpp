@@ -984,9 +984,16 @@ NS_IMETHODIMP
 nsXULAppInfo::GetAccessibilityInstantiator(nsAString &aInstantiator)
 {
 #if defined(ACCESSIBILITY) && defined(XP_WIN)
-  if (!a11y::GetInstantiator(aInstantiator)) {
+  if (!GetAccService()) {
     aInstantiator = NS_LITERAL_STRING("");
+    return NS_OK;
   }
+  nsAutoString oopClientInfo, ipClientInfo;
+  a11y::Compatibility::GetHumanReadableConsumersStr(ipClientInfo);
+  aInstantiator.Append(ipClientInfo);
+  aInstantiator.AppendLiteral("|");
+  a11y::GetInstantiator(oopClientInfo);
+  aInstantiator.Append(oopClientInfo);
 #else
   aInstantiator = NS_LITERAL_STRING("");
 #endif
@@ -1010,7 +1017,8 @@ nsXULAppInfo::EnsureContentProcess()
   if (!XRE_IsParentProcess())
     return NS_ERROR_NOT_AVAILABLE;
 
-  RefPtr<ContentParent> unused = ContentParent::GetNewOrUsedBrowserProcess();
+  RefPtr<ContentParent> unused = ContentParent::GetNewOrUsedBrowserProcess(
+    NS_LITERAL_STRING(DEFAULT_REMOTE_TYPE));
   return NS_OK;
 }
 
@@ -1105,17 +1113,6 @@ NS_IMETHODIMP
 nsXULAppInfo::GetDistributionID(nsACString& aResult)
 {
   aResult.AssignLiteral(MOZ_DISTRIBUTION_ID);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetIsOfficial(bool* aResult)
-{
-#ifdef MOZILLA_OFFICIAL
-  *aResult = true;
-#else
-  *aResult = false;
-#endif
   return NS_OK;
 }
 
