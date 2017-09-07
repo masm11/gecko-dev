@@ -206,14 +206,10 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsHTMLDocument, nsDocument,
                                    mWyciwygChannel,
                                    mMidasCommandManager)
 
-NS_IMPL_ADDREF_INHERITED(nsHTMLDocument, nsDocument)
-NS_IMPL_RELEASE_INHERITED(nsHTMLDocument, nsDocument)
-
-// QueryInterface implementation for nsHTMLDocument
-NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLDocument)
-  NS_INTERFACE_TABLE_INHERITED(nsHTMLDocument, nsIHTMLDocument,
-                               nsIDOMHTMLDocument)
-NS_INTERFACE_TABLE_TAIL_INHERITING(nsDocument)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(nsHTMLDocument,
+                                             nsDocument,
+                                             nsIHTMLDocument,
+                                             nsIDOMHTMLDocument)
 
 JSObject*
 nsHTMLDocument::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
@@ -3290,7 +3286,7 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
 
   bool restricted = commandID.LowerCaseEqualsLiteral("paste");
   if (restricted && !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
-                                                            NS_LITERAL_STRING("clipboardRead"))) {
+                                                            nsGkAtoms::clipboardRead)) {
     return false;
   }
 

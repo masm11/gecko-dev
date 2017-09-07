@@ -348,6 +348,18 @@ MacOSFontEntry::MacOSFontEntry(const nsAString& aPostscriptName,
     mIsLocalUserFont = aIsLocalUserFont;
 }
 
+gfxFontEntry*
+MacOSFontEntry::Clone() const
+{
+    MOZ_ASSERT(!IsUserFont(), "we can only clone installed fonts!");
+    MacOSFontEntry* fe =
+        new MacOSFontEntry(Name(), mWeight, mStandardFace, mSizeHint);
+    fe->mStyle = mStyle;
+    fe->mStretch = mStretch;
+    fe->mFixedPitch = mFixedPitch;
+    return fe;
+}
+
 CGFontRef
 MacOSFontEntry::GetFontRef()
 {
@@ -745,6 +757,11 @@ gfxMacPlatformFontList::gfxMacPlatformFontList() :
 
 gfxMacPlatformFontList::~gfxMacPlatformFontList()
 {
+    ::CFNotificationCenterRemoveObserver(::CFNotificationCenterGetLocalCenter(),
+                                         this,
+                                         kCTFontManagerRegisteredFontsChangedNotification,
+                                         0);
+
     if (mDefaultFont) {
         ::CFRelease(mDefaultFont);
     }
@@ -1280,7 +1297,7 @@ static const char kSystemFont_system[] = "-apple-system";
 bool
 gfxMacPlatformFontList::FindAndAddFamilies(const nsAString& aFamily,
                                            nsTArray<gfxFontFamily*>* aOutput,
-                                           bool aDeferOtherFamilyNamesLoading,
+                                           FindFamiliesFlags aFlags,
                                            gfxFontStyle* aStyle,
                                            gfxFloat aDevToCssSize)
 {
@@ -1297,7 +1314,7 @@ gfxMacPlatformFontList::FindAndAddFamilies(const nsAString& aFamily,
 
     return gfxPlatformFontList::FindAndAddFamilies(aFamily,
                                                    aOutput,
-                                                   aDeferOtherFamilyNamesLoading,
+                                                   aFlags,
                                                    aStyle,
                                                    aDevToCssSize);
 }
@@ -1516,6 +1533,12 @@ gfxMacPlatformFontList::CreateFontInfoData()
     return fi.forget();
 }
 
+gfxFontFamily*
+gfxMacPlatformFontList::CreateFontFamily(const nsAString& aName) const
+{
+    return new gfxMacFontFamily(aName, 0.0);
+}
+
 void
 gfxMacPlatformFontList::ActivateFontsFromDir(nsIFile* aDir)
 {
@@ -1528,6 +1551,9 @@ gfxMacPlatformFontList::ActivateFontsFromDir(nsIFile* aDir)
     if (NS_FAILED(aDir->GetDirectoryEntries(getter_AddRefs(e)))) {
         return;
     }
+
+    CFMutableArrayRef urls =
+        ::CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
 
     bool hasMore;
     while (NS_SUCCEEDED(e->HasMoreElements(&hasMore)) && hasMore) {
@@ -1549,13 +1575,15 @@ gfxMacPlatformFontList::ActivateFontsFromDir(nsIFile* aDir)
                                                       path.Length(),
                                                       false);
         if (fontURL) {
-            CFErrorRef error = nullptr;
-            ::CTFontManagerRegisterFontsForURL(fontURL,
-                                               kCTFontManagerScopeProcess,
-                                               &error);
+            ::CFArrayAppendValue(urls, fontURL);
             ::CFRelease(fontURL);
         }
     }
+
+    ::CTFontManagerRegisterFontsForURLs(urls,
+                                        kCTFontManagerScopeProcess,
+                                        nullptr);
+    ::CFRelease(urls);
 }
 
 #ifdef MOZ_BUNDLED_FONTS

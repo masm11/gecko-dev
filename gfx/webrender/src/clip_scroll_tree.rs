@@ -251,7 +251,7 @@ impl ClipScrollTree {
         // TODO(gw): This is an ugly borrow check workaround to clone these.
         //           Restructure this to avoid the clones!
         let (state, node_children) = {
-            let mut node = match self.nodes.get_mut(&layer_id) {
+            let node = match self.nodes.get_mut(&layer_id) {
                 Some(node) => node,
                 None => return,
             };
@@ -377,10 +377,10 @@ impl ClipScrollTree {
             NodeType::Clip(ref info) => {
                 pt.new_level("Clip".to_owned());
                 pt.add_item(format!("screen_bounding_rect: {:?}", info.screen_bounding_rect));
-                pt.add_item(format!("screen_inner_rect: {:?}", info.screen_inner_rect));
 
-                pt.new_level(format!("Clip Sources [{}]", info.clip_sources.len()));
-                for source in &info.clip_sources {
+                let clips = info.clip_sources.clips();
+                pt.new_level(format!("Clip Sources [{}]", clips.len()));
+                for source in clips {
                     pt.add_item(format!("{:?}", source));
                 }
                 pt.end_level();

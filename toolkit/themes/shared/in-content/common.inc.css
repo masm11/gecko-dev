@@ -79,8 +79,7 @@ xul|caption {
 html|h2,
 xul|caption > xul|checkbox,
 xul|caption > xul|label {
-  font-size: 1.3rem;
-  font-weight: bold;
+  font-weight: 600;
   line-height: 22px;
 }
 
@@ -692,7 +691,6 @@ xul|*.radio-label-box {
 
 *|*.category-name {
   line-height: 22px;
-  font-size: 1.45rem;
   padding-bottom: 2px;
   padding-inline-start: 9px;
   margin: 0;
@@ -753,7 +751,6 @@ xul|*.radio-label-box {
 }
 
 *|*.header-name {
-  font-size: 2rem;
   font-weight: 300;
   line-height: 30px;
   margin: 0;
@@ -894,6 +891,14 @@ xul|treecol:not([hideheader="true"]) > xul|*.treecol-sortdirection[sortDirection
 
 xul|treecol:not([hideheader="true"]) > xul|*.treecol-sortdirection[sortDirection="ascending"] {
   transform: scaleY(-1);
+}
+
+xul|treecol > xul|label.treecol-text {
+  font-size: 1rem;
+}
+
+xul|treechildren {
+  font-size: 1rem !important;
 }
 
 /* This is the only way to increase the height of a tree row unfortunately */

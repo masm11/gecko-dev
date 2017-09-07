@@ -68,7 +68,7 @@ impl Parse for SingleValue {
 
 impl ToCss for SingleValue {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        write!(dest, "{}", self.0)
+        self.0.to_css(dest)
     }
 }
 
@@ -105,9 +105,10 @@ impl Parse for PairValues {
 
 impl ToCss for PairValues {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {
-        write!(dest, "{}", self.0)?;
+        self.0.to_css(dest)?;
         if let Some(second) = self.1 {
-            write!(dest, " {}", second)?;
+            dest.write_char(' ')?;
+            second.to_css(dest)?;
         }
         Ok(())
     }
@@ -158,10 +159,10 @@ impl ToCss for VectorValues {
         let mut iter = self.0.iter();
         let first = iter.next();
         if let Some(first) = first {
-            write!(dest, "{}", first)?;
+            first.to_css(dest)?;
             for value in iter {
-                dest.write_str(" ")?;
-                write!(dest, "{}", value)?;
+                dest.write_char(' ')?;
+                value.to_css(dest)?;
             }
         }
         Ok(())
@@ -209,7 +210,7 @@ impl<'a, 'b, 'i, T> DeclarationParser<'i> for FFVDeclarationsParser<'a, 'b, T>
                        -> Result<(), ParseError<'i>> {
         let value = input.parse_entirely(|i| T::parse(self.context, i))?;
         let new = FFVDeclaration {
-            name: Atom::from(&*name).to_ascii_lowercase(),
+            name: Atom::from(&*name),
             value: value,
         };
         update_or_push(&mut self.declarations, new);

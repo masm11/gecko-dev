@@ -341,13 +341,16 @@
             <label id="keepUntil"
                    control="keepCookiesUntil"
                    accesskey="&keepUntil2.accesskey;">&keepUntil2.label;</label>
-            <menulist id="keepCookiesUntil"
-                      preference="network.cookie.lifetimePolicy">
-              <menupopup>
-                <menuitem label="&expire.label;" value="0"/>
-                <menuitem label="&close.label;" value="2"/>
-              </menupopup>
-            </menulist>
+            <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+            <hbox>
+              <menulist id="keepCookiesUntil"
+                        preference="network.cookie.lifetimePolicy">
+                <menupopup>
+                  <menuitem label="&expire.label;" value="0"/>
+                  <menuitem label="&close.label;" value="2"/>
+                </menupopup>
+              </menulist>
+            </hbox>
             <spacer flex="1"/>
             <button id="showCookiesButton"
                     class="accessory-button"
@@ -702,7 +705,7 @@
              class="learnMore text-link">&healthReportLearnMore.label;</label>
     </description>
 #ifndef MOZ_TELEMETRY_REPORTING
-    <description id="TelemetryDisabledDesc" class="indent" control="telemetryGroup">&healthReportingDisabled.label;</description>
+    <description id="TelemetryDisabledDesc" class="indent tip-caption" control="telemetryGroup">&healthReportingDisabled.label;</description>
 #endif
   </vbox>
 #ifdef MOZ_CRASHREPORTER
@@ -732,9 +735,11 @@
             label="&enableSafeBrowsing.label;"
             accesskey="&enableSafeBrowsing.accesskey;" />
   <vbox class="indent">
+#ifdef MOZILLA_OFFICIAL
     <checkbox id="blockDownloads"
               label="&blockDownloads.label;"
               accesskey="&blockDownloads.accesskey;" />
+#endif
     <checkbox id="blockUncommonUnwanted"
               label="&blockUncommonAndUnwanted.label;"
               accesskey="&blockUncommonAndUnwanted.accesskey;" />

@@ -21,7 +21,7 @@ use properties::{AnimationRules, PropertyDeclarationBlock};
 #[cfg(feature = "servo")]
 use properties::INHERIT_ALL;
 use properties::IS_LINK;
-use rule_tree::{CascadeLevel, RuleTree, StyleSource};
+use rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
 use selector_map::{PrecomputedHashMap, SelectorMap, SelectorMapEntry};
 use selector_parser::{SelectorImpl, PerPseudoElementMap, PseudoElement};
 use selectors::attr::NamespaceConstraint;
@@ -40,10 +40,12 @@ use std::ops;
 use style_traits::viewport::ViewportConstraints;
 use stylesheet_set::{OriginValidity, SheetRebuildKind, StylesheetSet, StylesheetIterator, StylesheetFlusher};
 #[cfg(feature = "gecko")]
-use stylesheets::{CounterStyleRule, FontFaceRule, FontFeatureValuesRule};
+use stylesheets::{CounterStyleRule, FontFaceRule, FontFeatureValuesRule, PageRule};
 use stylesheets::{CssRule, Origin, OriginSet, PerOrigin, PerOriginIter};
 #[cfg(feature = "gecko")]
-use stylesheets::{MallocSizeOf, MallocSizeOfFn};
+use stylesheets::{MallocEnclosingSizeOfFn, MallocSizeOf, MallocSizeOfBox, MallocSizeOfFn};
+#[cfg(feature = "gecko")]
+use stylesheets::{MallocSizeOfHash, MallocSizeOfVec};
 use stylesheets::StyleRule;
 use stylesheets::StylesheetInDocument;
 use stylesheets::UserAgentStylesheets;
@@ -355,8 +357,33 @@ impl DocumentCascadeData {
                         .borrow_mut_for_origin(&origin)
                         .add_counter_style(guard, rule);
                 }
+                #[cfg(feature = "gecko")]
+                CssRule::Page(ref rule) => {
+                    _extra_data
+                        .borrow_mut_for_origin(&origin)
+                        .add_page(rule);
+                }
                 // We don't care about any other rule.
                 _ => {}
+            }
+        }
+    }
+
+    /// Measures heap usage.
+    #[cfg(feature = "gecko")]
+    pub fn malloc_add_size_of_children(&self, malloc_size_of: MallocSizeOfFn,
+                                       malloc_enclosing_size_of: MallocEnclosingSizeOfFn,
+                                       sizes: &mut ServoStyleSetSizes) {
+        self.per_origin.user_agent.malloc_add_size_of_children(malloc_size_of,
+                                                               malloc_enclosing_size_of, sizes);
+        self.per_origin.user.malloc_add_size_of_children(malloc_size_of,
+                                                         malloc_enclosing_size_of, sizes);
+        self.per_origin.author.malloc_add_size_of_children(malloc_size_of,
+                                                           malloc_enclosing_size_of, sizes);
+
+        for elem in self.precomputed_pseudo_element_decls.iter() {
+            if let Some(ref elem) = *elem {
+                sizes.mStylistPrecomputedPseudos += elem.malloc_shallow_size_of_vec(malloc_size_of);
             }
         }
     }
@@ -690,17 +717,33 @@ impl Stylist {
     ) -> Arc<ComputedValues> {
         debug_assert!(pseudo.is_precomputed());
 
-        let rule_node =
-            match self.cascade_data.precomputed_pseudo_element_decls.get(pseudo) {
-                Some(declarations) => {
-                    self.rule_tree.insert_ordered_rules_with_important(
-                        declarations.into_iter().map(|a| (a.source.clone(), a.level())),
-                        guards
-                    )
-                }
-                None => self.rule_tree.root().clone(),
-            };
+        let rule_node = self.rule_node_for_precomputed_pseudo(
+            guards,
+            pseudo,
+            None,
+        );
 
+        self.precomputed_values_for_pseudo_with_rule_node(
+            guards,
+            pseudo,
+            parent,
+            cascade_flags,
+            font_metrics,
+            &rule_node
+        )
+    }
+
+    /// Computes the style for a given "precomputed" pseudo-element with
+    /// given rule node.
+    pub fn precomputed_values_for_pseudo_with_rule_node(
+        &self,
+        guards: &StylesheetGuards,
+        pseudo: &PseudoElement,
+        parent: Option<&ComputedValues>,
+        cascade_flags: CascadeFlags,
+        font_metrics: &FontMetricsProvider,
+        rule_node: &StrongRuleNode
+    ) -> Arc<ComputedValues> {
         // NOTE(emilio): We skip calculating the proper layout parent style
         // here.
         //
@@ -718,7 +761,7 @@ impl Stylist {
         properties::cascade(
             &self.device,
             Some(pseudo),
-            &rule_node,
+            rule_node,
             guards,
             parent,
             parent,
@@ -728,6 +771,43 @@ impl Stylist {
             cascade_flags,
             self.quirks_mode,
         )
+    }
+
+    /// Returns the rule node for given precomputed pseudo-element.
+    ///
+    /// If we want to include extra declarations to this precomputed pseudo-element,
+    /// we can provide a vector of ApplicableDeclarationBlock to extra_declarations
+    /// argument. This is useful for providing extra @page rules.
+    pub fn rule_node_for_precomputed_pseudo(
+        &self,
+        guards: &StylesheetGuards,
+        pseudo: &PseudoElement,
+        extra_declarations: Option<Vec<ApplicableDeclarationBlock>>,
+    ) -> StrongRuleNode {
+        let mut decl;
+        let declarations = match self.cascade_data.precomputed_pseudo_element_decls.get(pseudo) {
+            Some(declarations) => {
+                match extra_declarations {
+                    Some(mut extra_decls) => {
+                        decl = declarations.clone();
+                        decl.append(&mut extra_decls);
+                        Some(&decl)
+                    },
+                    None => Some(declarations),
+                }
+            }
+            None => extra_declarations.as_ref(),
+        };
+
+        match declarations {
+            Some(decls) => {
+                self.rule_tree.insert_ordered_rules_with_important(
+                    decls.into_iter().map(|a| (a.source.clone(), a.level())),
+                    guards
+                )
+            },
+            None => self.rule_tree.root().clone(),
+        }
     }
 
     /// Returns the style for an anonymous box of the given type.
@@ -1070,34 +1150,32 @@ impl Stylist {
     /// Also, the device that arrives here may need to take the viewport rules
     /// into account.
     ///
-    /// feature = "servo" because gecko only has one device, and manually tracks
-    /// when the device is dirty.
-    ///
-    /// FIXME(emilio): The semantics of the device for Servo and Gecko are
-    /// different enough we may want to unify them.
-    #[cfg(feature = "servo")]
+    /// For Gecko, this is called when XBL bindings are used by different
+    /// documents.
     pub fn set_device(
         &mut self,
         mut device: Device,
         guard: &SharedRwLockReadGuard,
     ) -> OriginSet {
-        let cascaded_rule = {
-            let stylesheets = self.stylesheets.iter();
+        if viewport_rule::enabled() {
+            let cascaded_rule = {
+                let stylesheets = self.stylesheets.iter();
 
-            ViewportRule {
-                declarations: viewport_rule::Cascade::from_stylesheets(
-                    stylesheets.clone(),
-                    guard,
-                    &device
-                ).finish(),
+                ViewportRule {
+                    declarations: viewport_rule::Cascade::from_stylesheets(
+                        stylesheets.clone(),
+                        guard,
+                        &device
+                    ).finish(),
+                }
+            };
+
+            self.viewport_constraints =
+                ViewportConstraints::maybe_new(&device, &cascaded_rule, self.quirks_mode);
+
+            if let Some(ref constraints) = self.viewport_constraints {
+                device.account_for_viewport_rule(constraints);
             }
-        };
-
-        self.viewport_constraints =
-            ViewportConstraints::maybe_new(&device, &cascaded_rule, self.quirks_mode);
-
-        if let Some(ref constraints) = self.viewport_constraints {
-            device.account_for_viewport_rule(constraints);
         }
 
         self.device = device;
@@ -1567,9 +1645,13 @@ impl Stylist {
     /// Measures heap usage.
     #[cfg(feature = "gecko")]
     pub fn malloc_add_size_of_children(&self, malloc_size_of: MallocSizeOfFn,
+                                       malloc_enclosing_size_of: MallocEnclosingSizeOfFn,
                                        sizes: &mut ServoStyleSetSizes) {
-        // XXX: need to measure other fields
+        self.cascade_data.malloc_add_size_of_children(malloc_size_of, malloc_enclosing_size_of,
+                                                      sizes);
         sizes.mStylistRuleTree += self.rule_tree.malloc_size_of_children(malloc_size_of);
+
+        // We may measure other fields in the future if DMD says it's worth it.
     }
 }
 
@@ -1588,6 +1670,10 @@ pub struct ExtraStyleData {
     /// A map of effective counter-style rules.
     #[cfg(feature = "gecko")]
     pub counter_styles: PrecomputedHashMap<Atom, Arc<Locked<CounterStyleRule>>>,
+
+    /// A map of effective page rules.
+    #[cfg(feature = "gecko")]
+    pub pages: Vec<Arc<Locked<PageRule>>>,
 }
 
 #[cfg(feature = "gecko")]
@@ -1611,6 +1697,11 @@ impl ExtraStyleData {
         let name = rule.read_with(guard).mName.raw::<nsIAtom>().into();
         self.counter_styles.insert(name, rule.clone());
     }
+
+    /// Add the given @page rule.
+    fn add_page(&mut self, rule: &Arc<Locked<PageRule>>) {
+        self.pages.push(rule.clone());
+    }
 }
 
 impl ExtraStyleData {
@@ -1620,7 +1711,19 @@ impl ExtraStyleData {
             self.font_faces.clear();
             self.font_feature_values.clear();
             self.counter_styles.clear();
+            self.pages.clear();
         }
+    }
+
+    /// Measure heap usage.
+    #[cfg(feature = "gecko")]
+    pub fn malloc_size_of_children(&self, malloc_size_of: MallocSizeOfFn,
+                                   malloc_enclosing_size_of: MallocEnclosingSizeOfFn) -> usize {
+        let mut n = 0;
+        n += self.font_faces.malloc_shallow_size_of_vec(malloc_size_of);
+        n += self.font_feature_values.malloc_shallow_size_of_vec(malloc_size_of);
+        n += self.counter_styles.malloc_shallow_size_of_hash(malloc_enclosing_size_of);
+        n
     }
 }
 
@@ -1914,6 +2017,39 @@ impl CascadeData {
         self.state_dependencies = ElementState::empty();
         self.mapped_ids.clear();
         self.selectors_for_cache_revalidation.clear();
+    }
+
+    /// Measures heap usage.
+    #[cfg(feature = "gecko")]
+    pub fn malloc_add_size_of_children(&self, malloc_size_of: MallocSizeOfFn,
+                                       malloc_enclosing_size_of: MallocEnclosingSizeOfFn,
+                                       sizes: &mut ServoStyleSetSizes) {
+        sizes.mStylistElementAndPseudosMaps +=
+            self.element_map.malloc_size_of_children(malloc_size_of, malloc_enclosing_size_of);
+
+        for elem in self.pseudos_map.iter() {
+            if let Some(ref elem) = *elem {
+                sizes.mStylistElementAndPseudosMaps +=
+                    elem.malloc_shallow_size_of_box(malloc_size_of) +
+                    elem.malloc_size_of_children(malloc_size_of, malloc_enclosing_size_of)
+            }
+        }
+
+        sizes.mStylistOther +=
+            self.animations.malloc_shallow_size_of_hash(malloc_enclosing_size_of);
+        for val in self.animations.values() {
+            sizes.mStylistOther += val.malloc_size_of_children(malloc_size_of);
+        }
+
+        sizes.mStylistInvalidationMap +=
+            self.invalidation_map.malloc_size_of_children(malloc_size_of, malloc_enclosing_size_of);
+
+        sizes.mStylistRevalidationSelectors +=
+            self.selectors_for_cache_revalidation.malloc_size_of_children(malloc_size_of,
+                                                                          malloc_enclosing_size_of);
+
+        sizes.mStylistOther +=
+            self.effective_media_query_results.malloc_size_of_children(malloc_enclosing_size_of);
     }
 }
 

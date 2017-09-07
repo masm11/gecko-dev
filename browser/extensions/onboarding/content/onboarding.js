@@ -21,6 +21,8 @@ const BRAND_SHORT_NAME = Services.strings
                      .GetStringFromName("brandShortName");
 const PROMPT_COUNT_PREF = "browser.onboarding.notification.prompt-count";
 const ONBOARDING_DIALOG_ID = "onboarding-overlay-dialog";
+const ONBOARDING_MIN_WIDTH_PX = 960;
+const SPEECH_BUBBLE_MIN_WIDTH_PX = 1150;
 
 /**
  * Add any number of tours, key is the tourId, value should follow the format below
@@ -380,11 +382,18 @@ class Onboarding {
   }
 
   _resizeUI() {
-    // Don't show the overlay UI before we get to a better, responsive design.
-    if (this._window.document.body.getBoundingClientRect().width < 960) {
+    let width = this._window.document.body.getBoundingClientRect().width;
+    if (width < ONBOARDING_MIN_WIDTH_PX) {
+      // Don't show the overlay UI before we get to a better, responsive design.
       this.destroy();
+      return;
+    }
+
+    this._initUI();
+    if (this._isFirstSession && width >= SPEECH_BUBBLE_MIN_WIDTH_PX) {
+      this._overlayIcon.classList.add("onboarding-speech-bubble");
     } else {
-      this._initUI();
+      this._overlayIcon.classList.remove("onboarding-speech-bubble");
     }
   }
 
@@ -443,11 +452,6 @@ class Onboarding {
     }
 
     this._prefsObserved = new Map();
-    this._prefsObserved.set("browser.onboarding.hidden", prefValue => {
-      if (prefValue) {
-        this.destroy();
-      }
-    });
     this._tours.forEach(tour => {
       let tourId = tour.id;
       this._prefsObserved.set(`browser.onboarding.tour.${tourId}.completed`, () => {
@@ -489,6 +493,11 @@ class Onboarding {
       case "onboarding-overlay-button":
         this.showOverlay();
         this.gotoPage(this._firstUncompleteTour.id);
+        break;
+      case "onboarding-skip-tour-button":
+        this.hideNotification();
+        this.hideOverlay();
+        this.skipTour();
         break;
       case "onboarding-overlay-close-btn":
       // If the clicking target is directly on the outer-most overlay,
@@ -657,10 +666,6 @@ class Onboarding {
   }
 
   hideOverlay() {
-    let hiddenCheckbox = this._window.document.getElementById("onboarding-tour-hidden-checkbox");
-    if (hiddenCheckbox.checked) {
-      this.hide();
-    }
     this.toggleModal(this._overlay.classList.toggle("onboarding-opened"));
   }
 
@@ -780,41 +785,58 @@ class Onboarding {
     }
   }
 
-  _muteNotificationOnFirstSession() {
+  get _isFirstSession() {
+    // Should only directly return on the "false" case. Consider:
+    //   1. On the 1st session, `_firstSession` is true
+    //   2. During the 1st session, user resizes window so that the UI is destroyed
+    //   3. After the 1st mute session, user resizes window so that the UI is re-init
+    if (this._firstSession === false) {
+      return false;
+    }
+    this._firstSession = true;
+
+    // There is a queue, which means we had prompted tour notifications before. Therefore this is not the 1st session.
     if (Services.prefs.prefHasUserValue("browser.onboarding.notification.tour-ids-queue")) {
-      // There is a queue. We had prompted before, this must not be the 1st session.
+      this._firstSession = false;
+    }
+
+    // When this is set to 0 on purpose, always judge as not the 1st session
+    if (Services.prefs.getIntPref("browser.onboarding.notification.mute-duration-on-first-session-ms") === 0) {
+      this._firstSession = false;
+    }
+
+    return this._firstSession;
+  }
+
+  _getLastTourChangeTime() {
+    return 1000 * Services.prefs.getIntPref("browser.onboarding.notification.last-time-of-changing-tour-sec", 0);
+  }
+
+  _muteNotificationOnFirstSession(lastTourChangeTime) {
+    if (!this._isFirstSession) {
       return false;
     }
 
-    let muteDuration = Services.prefs.getIntPref("browser.onboarding.notification.mute-duration-on-first-session-ms");
-    if (muteDuration == 0) {
-      // Don't mute when this is set to 0 on purpose.
-      return false;
-    }
-
-    // Reuse the `last-time-of-changing-tour-sec` to save the time that
-    // we try to prompt on the 1st session.
-    let lastTime = 1000 * Services.prefs.getIntPref("browser.onboarding.notification.last-time-of-changing-tour-sec", 0);
-    if (lastTime <= 0) {
+    if (lastTourChangeTime <= 0) {
       sendMessageToChrome("set-prefs", [{
         name: "browser.onboarding.notification.last-time-of-changing-tour-sec",
         value: Math.floor(Date.now() / 1000)
       }]);
       return true;
     }
-    return Date.now() - lastTime <= muteDuration;
+    let muteDuration = Services.prefs.getIntPref("browser.onboarding.notification.mute-duration-on-first-session-ms");
+    return Date.now() - lastTourChangeTime <= muteDuration;
   }
 
-  _isTimeForNextTourNotification() {
+  _isTimeForNextTourNotification(lastTourChangeTime) {
     let promptCount = Services.prefs.getIntPref("browser.onboarding.notification.prompt-count", 0);
     let maxCount = Services.prefs.getIntPref("browser.onboarding.notification.max-prompt-count-per-tour");
     if (promptCount >= maxCount) {
       return true;
     }
 
-    let lastTime = 1000 * Services.prefs.getIntPref("browser.onboarding.notification.last-time-of-changing-tour-sec", 0);
     let maxTime = Services.prefs.getIntPref("browser.onboarding.notification.max-life-time-per-tour-ms");
-    if (lastTime && Date.now() - lastTime >= maxTime) {
+    if (lastTourChangeTime && Date.now() - lastTourChangeTime >= maxTime) {
       return true;
     }
 
@@ -866,14 +888,25 @@ class Onboarding {
       return;
     }
 
-    if (this._muteNotificationOnFirstSession()) {
+    let lastTime = this._getLastTourChangeTime();
+    if (this._muteNotificationOnFirstSession(lastTime)) {
       return;
     }
+    // After the notification mute on the 1st session,
+    // we don't want to show the speech bubble by default
+    this._overlayIcon.classList.remove("onboarding-speech-bubble");
 
     let queue = this._getNotificationQueue();
+    let totalMaxTime = Services.prefs.getIntPref("browser.onboarding.notification.max-life-time-all-tours-ms");
+    if (lastTime && Date.now() - lastTime >= totalMaxTime) {
+      // Reach total max life time for all tour notifications.
+      // Clear the queue so that we would finish tour notifications below
+      queue = [];
+    }
+
     let startQueueLength = queue.length;
     // See if need to move on to the next tour
-    if (queue.length > 0 && this._isTimeForNextTourNotification()) {
+    if (queue.length > 0 && this._isTimeForNextTourNotification(lastTime)) {
       queue.shift();
     }
     // We don't want to prompt completed tour.
@@ -956,7 +989,7 @@ class Onboarding {
           <h1 id="onboarding-notification-tour-title"></h1>
           <p id="onboarding-notification-tour-message"></p>
         </div>
-        <button id="onboarding-notification-action-btn"></button>
+        <button id="onboarding-notification-action-btn" class="onboarding-action-button"></button>
       </section>
       <button id="onboarding-notification-close-btn" class="onboarding-close-btn"></button>
     `;
@@ -967,13 +1000,9 @@ class Onboarding {
     return footer;
   }
 
-  hide() {
+  skipTour() {
     this.setToursCompleted(this._tours.map(tour => tour.id));
     sendMessageToChrome("set-prefs", [
-      {
-        name: "browser.onboarding.hidden",
-        value: true
-      },
       {
         name: "browser.onboarding.notification.finished",
         value: true
@@ -993,7 +1022,7 @@ class Onboarding {
           <ul id="onboarding-tour-list" role="tablist"></ul>
         </nav>
         <footer id="onboarding-footer">
-          <input type="checkbox" id="onboarding-tour-hidden-checkbox" /><label for="onboarding-tour-hidden-checkbox"></label>
+          <button id="onboarding-skip-tour-button" class="onboarding-action-button"></button>
         </footer>
         <button id="onboarding-overlay-close-btn" class="onboarding-close-btn"></button>
       </div>
@@ -1002,8 +1031,8 @@ class Onboarding {
     this._dialog = div.querySelector(`[role="dialog"]`);
     this._dialog.id = ONBOARDING_DIALOG_ID;
 
-    div.querySelector("label[for='onboarding-tour-hidden-checkbox']").textContent =
-      this._bundle.GetStringFromName("onboarding.hidden-checkbox-label-text");
+    div.querySelector("#onboarding-skip-tour-button").textContent =
+      this._bundle.GetStringFromName("onboarding.skip-tour-button-label");
     div.querySelector("#onboarding-header").textContent =
       this._bundle.GetStringFromName("onboarding.overlay-title2");
     let closeBtn = div.querySelector("#onboarding-overlay-close-btn");
@@ -1117,20 +1146,18 @@ if (Services.prefs.getBoolPref("browser.onboarding.enabled", false)) {
       return;
     }
 
-    if (!Services.prefs.getBoolPref("browser.onboarding.hidden", false)) {
-      let window = evt.target.defaultView;
-      let location = window.location.href;
-      if (location == ABOUT_NEWTAB_URL || location == ABOUT_HOME_URL) {
-        // We just want to run tests as quick as possible
-        // so in the automation test, we don't do `requestIdleCallback`.
-        if (Cu.isInAutomation) {
-          new Onboarding(window);
-          return;
-        }
-        window.requestIdleCallback(() => {
-          new Onboarding(window);
-        });
+    let window = evt.target.defaultView;
+    let location = window.location.href;
+    if (location == ABOUT_NEWTAB_URL || location == ABOUT_HOME_URL) {
+      // We just want to run tests as quick as possible
+      // so in the automation test, we don't do `requestIdleCallback`.
+      if (Cu.isInAutomation) {
+        new Onboarding(window);
+        return;
       }
+      window.requestIdleCallback(() => {
+        new Onboarding(window);
+      });
     }
   }, true);
 }

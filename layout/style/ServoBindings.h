@@ -301,6 +301,8 @@ void Gecko_nsFont_InitSystem(nsFont* dst, int32_t font_id,
                              const nsStyleFont* font, RawGeckoPresContextBorrowed pres_context);
 void Gecko_nsFont_Destroy(nsFont* dst);
 
+// The gfxFontFeatureValueSet returned from this function has zero reference.
+gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet();
 nsTArray<unsigned int>* Gecko_AppendFeatureValueHashEntry(
   gfxFontFeatureValueSet* value_set, nsIAtom* family, uint32_t alternate, nsIAtom* name);
 void Gecko_nsFont_SetFontFeatureValuesLookup(nsFont* font,
@@ -391,8 +393,8 @@ mozilla::CSSPseudoElementType Gecko_GetImplementedPseudo(RawGeckoElementBorrowed
 // they wrap the value in a struct.
 uint32_t Gecko_CalcStyleDifference(ServoStyleContextBorrowed old_style,
                                    ServoStyleContextBorrowed new_style,
-                                   uint64_t old_style_bits,
-                                   bool* any_style_changed);
+                                   bool* any_style_changed,
+                                   bool* reset_only_changed);
 
 // Get an element snapshot for a given element from the table.
 const ServoElementSnapshot*
