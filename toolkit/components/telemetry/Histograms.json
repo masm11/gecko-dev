@@ -2191,7 +2191,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QSMALL_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2200,7 +2200,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QMED_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2209,7 +2209,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QBIG_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2218,7 +2218,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QSMALL_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2227,7 +2227,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QMED_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2236,7 +2236,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_QBIG_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2245,7 +2245,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QSMALL_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2254,7 +2254,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QMED_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2263,7 +2263,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QBIG_NORMALPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2272,7 +2272,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QSMALL_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2281,7 +2281,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QMED_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2290,7 +2290,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_QBIG_HIGHPRI_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2299,7 +2299,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_SMALL_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2308,7 +2308,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_LARGE_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2317,7 +2317,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_REVALIDATED_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2326,7 +2326,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTART_NOTREVALIDATED_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2335,7 +2335,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_REVALIDATED_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2344,7 +2344,7 @@
   },
   "HTTP_NET_VS_CACHE_ONSTOP_NOTREVALIDATED_V2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1325322],
       "kind": "enumerated",
@@ -2353,7 +2353,7 @@
   },
   "HTTP_ONSTART_SUSPEND_TOTAL_TIME": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
       "alert_emails": ["necko@mozilla.com"],
       "bug_numbers": [1347948],
       "kind": "exponential",
@@ -2363,7 +2363,7 @@
   },
   "NETWORK_RACE_CACHE_WITH_NETWORK_USAGE_2": {
     "record_in_processes": ["main", "content"],
-    "expires_in_version": "58",
+    "expires_in_version": "62",
     "alert_emails": ["necko@mozilla.com"],
     "bug_numbers": [1377340],
     "kind": "categorical",
@@ -11381,16 +11381,6 @@
     "description": "720p VP9 decode benchmark measurement in frames per second",
     "releaseChannelCollection": "opt-out"
   },
-  "VIDEO_CDM_CREATED": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["cpearce@mozilla.com"],
-    "expires_in_version": "58",
-    "bug_numbers": [1304207],
-    "kind": "enumerated",
-    "n_values": 6,
-    "description": "Note the type of CDM (0=ClearKey, 1=Primetime, 2=Widevine, 3=unknown) every time we successfully instantiate an EME MediaKeys object.",
-    "releaseChannelCollection": "opt-out"
-  },
   "MEDIA_CODEC_USED": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["cpearce@mozilla.com"],
@@ -11765,14 +11755,6 @@
     "high": 120000,
     "n_buckets": 20,
     "description": "Tracking how long a ServiceWorker stays alive after it is spawned. File bugs in Core::DOM in case of a Telemetry regression."
-  },
-  "FILE_EMBEDDED_SERVICEWORKERS": {
-    "record_in_processes": ["main", "content"],
-    "alert_emails": ["dparks@mozilla.com"],
-    "expires_in_version": "58",
-    "kind": "count",
-    "bug_numbers": [1312788],
-    "description": "Count ServiceWorkers that are embedded in pages loading with the file:/// protocol."
   },
   "GRAPHICS_SANITY_TEST": {
     "record_in_processes": ["main", "content"],
@@ -12598,15 +12580,16 @@
     "cpp_guard": "XP_LINUX",
     "description": "System calls blocked by a seccomp-bpf sandbox policy; limited to syscalls where we would crash on Nightly.  The key is generally the architecture and syscall ID but in some cases we include non-personally-identifying information from the syscall arguments; see the function SubmitToTelemetry in security/sandbox/linux/reporter/SandboxReporter.cpp for details."
   },
-  "SANDBOX_FAILED_LAUNCH": {
+  "SANDBOX_FAILED_LAUNCH_KEYED": {
     "record_in_processes": ["main"],
     "alert_emails": ["bowen@mozilla.com"],
-    "expires_in_version": "60",
+    "expires_in_version": "never",
     "kind": "enumerated",
+    "keyed": true,
     "n_values": 50,
     "bug_numbers": [1368600],
     "cpp_guard": "XP_WIN",
-    "description": "Error code when a Windows sandboxed process fails to launch. See https://dxr.mozilla.org/mozilla-central/search?q=ResultCode++path%3Asandbox_types.h&redirect=true for definitions of the error codes."
+    "description": "Error code when a Windows sandboxed process fails to launch, keyed by process type and Windows error code. See https://dxr.mozilla.org/mozilla-central/search?q=ResultCode++path%3Asandbox_types.h&redirect=true for definitions of the error codes."
   },
   "SYNC_WORKER_OPERATION": {
     "record_in_processes": ["main", "content"],
@@ -12748,7 +12731,7 @@
   "STORAGE_SYNC_GET_OPS_SIZE": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["eglassercamp@mozilla.com"],
-    "expires_in_version": "58",
+    "expires_in_version": "64",
     "bug_numbers": [1328974],
     "kind": "exponential",
     "high": 100000,
@@ -12760,7 +12743,7 @@
   "STORAGE_SYNC_SET_OPS_SIZE": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["eglassercamp@mozilla.com"],
-    "expires_in_version": "58",
+    "expires_in_version": "64",
     "bug_numbers": [1328974],
     "kind": "exponential",
     "high": 100000,
@@ -12772,7 +12755,7 @@
   "STORAGE_SYNC_REMOVE_OPS": {
     "record_in_processes": ["main", "content"],
     "alert_emails": ["eglassercamp@mozilla.com"],
-    "expires_in_version": "58",
+    "expires_in_version": "64",
     "bug_numbers": [1328974],
     "kind": "count",
     "keyed": true,
@@ -13643,5 +13626,16 @@
     "n_buckets": 100,
     "bug_numbers": [1393399],
     "description": "Time in milliseconds to recover a video decoder from a HW video decoder crash, calculated since MFR gets a NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER error. The data is sent when video decoding is recovered from a GPU crash and the first frame is decoded."
+  },
+  "FORM_FILLING_REQUIRED_TIME_MS": {
+    "record_in_processes": ["main"],
+    "alert_emails": ["autofill@lists.mozilla.org", "jcheng@mozilla.com", "chsiang@mozilla.com"],
+    "expires_in_version": "60",
+    "kind": "exponential",
+    "high": 300000,
+    "n_buckets": 22,
+    "keyed": true,
+    "bug_numbers": [1341569],
+    "description": "Milliseconds between starting to fill an autofill-eligible form field and submitting the form, keyed by the combination of form type and filling type."
   }
 }

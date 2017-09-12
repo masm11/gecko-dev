@@ -186,13 +186,12 @@ intrinsic_IsConstructor(JSContext* cx, unsigned argc, Value* vp)
     CallArgs args = CallArgsFromVp(argc, vp);
     MOZ_ASSERT(args.length() == 1);
 
-    RootedValue val(cx, args[0]);
-    if (!IsConstructor(val)) {
+    if (!IsConstructor(args[0])) {
         args.rval().setBoolean(false);
         return true;
     }
 
-    RootedObject obj(cx, &val.toObject());
+    JSObject* obj = &args[0].toObject();
     if (!IsWrapper(obj)) {
         args.rval().setBoolean(true);
         return true;
@@ -457,9 +456,8 @@ intrinsic_MakeConstructible(JSContext* cx, unsigned argc, Value* vp)
     // Normal .prototype properties aren't enumerable.  But for this to clone
     // correctly, it must be enumerable.
     RootedObject ctor(cx, &args[0].toObject());
-    if (!DefineProperty(cx, ctor, cx->names().prototype, args[1],
-                        nullptr, nullptr,
-                        JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+    if (!DefineDataProperty(cx, ctor, cx->names().prototype, args[1],
+                            JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
     {
         return false;
     }

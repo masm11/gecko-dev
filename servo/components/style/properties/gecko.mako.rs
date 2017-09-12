@@ -53,7 +53,7 @@ use logical_geometry::WritingMode;
 use media_queries::Device;
 use properties::animated_properties::TransitionProperty;
 use properties::computed_value_flags::ComputedValueFlags;
-use properties::{longhands, FontComputationData, Importance, LonghandId};
+use properties::{default_font_size_keyword, longhands, FontComputationData, Importance, LonghandId};
 use properties::{PropertyDeclaration, PropertyDeclarationBlock, PropertyDeclarationId};
 use rule_tree::StrongRuleNode;
 use selector_parser::PseudoElement;
@@ -85,7 +85,7 @@ impl ComputedValues {
         pseudo: Option<<&PseudoElement>,
         custom_properties: Option<Arc<CustomPropertiesMap>>,
         writing_mode: WritingMode,
-        font_size_keyword: Option<(longhands::font_size::KeywordSize, f32)>,
+        font_size_keyword: FontComputationData,
         flags: ComputedValueFlags,
         rules: Option<StrongRuleNode>,
         visited_style: Option<Arc<ComputedValues>>,
@@ -114,7 +114,7 @@ impl ComputedValues {
         ComputedValuesInner::new(
             /* custom_properties = */ None,
             /* writing_mode = */ WritingMode::empty(), // FIXME(bz): This seems dubious
-            FontComputationData::default_font_size_keyword(),
+            default_font_size_keyword(),
             ComputedValueFlags::empty(),
             /* rules = */ None,
             /* visited_style = */ None,
@@ -188,7 +188,7 @@ type ParentStyleContextInfo<'a> = Option< &'a ComputedValues>;
 impl ComputedValuesInner {
     pub fn new(custom_properties: Option<Arc<CustomPropertiesMap>>,
                writing_mode: WritingMode,
-               font_size_keyword: Option<(longhands::font_size::KeywordSize, f32)>,
+               font_size_keyword: FontComputationData,
                flags: ComputedValueFlags,
                rules: Option<StrongRuleNode>,
                visited_style: Option<Arc<ComputedValues>>,
@@ -199,7 +199,7 @@ impl ComputedValuesInner {
         ComputedValuesInner {
             custom_properties: custom_properties,
             writing_mode: writing_mode,
-            font_computation_data: FontComputationData::new(font_size_keyword),
+            font_computation_data: font_size_keyword,
             rules: rules,
             visited_style: visited_style.map(|x| Arc::into_raw_offset(x)),
             flags: flags,
@@ -1700,7 +1700,7 @@ fn static_assert() {
         if let Some(integer) = v.line_num {
             // clamping the integer between a range
             self.gecko.${value.gecko}.mInteger = cmp::max(nsStyleGridLine_kMinLine,
-                cmp::min(integer.value(), nsStyleGridLine_kMaxLine));
+                cmp::min(integer, nsStyleGridLine_kMaxLine));
         }
     }
 
@@ -1717,7 +1717,6 @@ fn static_assert() {
     pub fn clone_${value.name}(&self) -> longhands::${value.name}::computed_value::T {
         use gecko_bindings::structs::{nsStyleGridLine_kMinLine, nsStyleGridLine_kMaxLine};
         use string_cache::Atom;
-        use values::specified::Integer;
 
         longhands::${value.name}::computed_value::T {
             is_span: self.gecko.${value.gecko}.mHasSpan,
@@ -1735,7 +1734,7 @@ fn static_assert() {
                 } else {
                     debug_assert!(nsStyleGridLine_kMinLine <= self.gecko.${value.gecko}.mInteger);
                     debug_assert!(self.gecko.${value.gecko}.mInteger <= nsStyleGridLine_kMaxLine);
-                    Some(Integer::new(self.gecko.${value.gecko}.mInteger))
+                    Some(self.gecko.${value.gecko}.mInteger)
                 },
         }
     }
@@ -1895,7 +1894,7 @@ fn static_assert() {
         use nsstring::nsStringRepr;
         use values::CustomIdent;
         use values::generics::grid::{GridTemplateComponent, LineNameList, RepeatCount};
-        use values::generics::grid::{TrackList, TrackListType, TrackRepeat, TrackSize};
+        use values::generics::grid::{TrackList, TrackListType, TrackListValue, TrackRepeat, TrackSize};
 
         let value = match unsafe { ${self_grid}.mPtr.as_ref() } {
             None => return GridTemplateComponent::None,
@@ -1965,7 +1964,7 @@ fn static_assert() {
 
                     auto_repeat = Some(TrackRepeat{count, line_names, track_sizes});
                 } else {
-                    values.push(track_size);
+                    values.push(TrackListValue::TrackSize(track_size));
                 }
             }
 
@@ -2341,7 +2340,7 @@ fn static_assert() {
     pub fn calculate_script_level_size(&self, parent: &Self, device: &Device) -> (Au, Au) {
         use std::cmp;
 
-        let delta = self.gecko.mScriptLevel - parent.gecko.mScriptLevel;
+        let delta = self.gecko.mScriptLevel.saturating_sub(parent.gecko.mScriptLevel);
 
         let parent_size = Au(parent.gecko.mSize);
         let parent_unconstrained_size = Au(parent.gecko.mScriptUnconstrainedSize);

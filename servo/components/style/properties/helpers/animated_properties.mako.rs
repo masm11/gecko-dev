@@ -46,7 +46,7 @@ use values::animated::effects::Filter as AnimatedFilter;
 use values::animated::effects::FilterList as AnimatedFilterList;
 use values::animated::effects::TextShadowList as AnimatedTextShadowList;
 use values::computed::{Angle, BorderCornerRadius, CalcLengthOrPercentage};
-use values::computed::{ClipRect, Context, ComputedUrl, ComputedValueAsSpecified};
+use values::computed::{ClipRect, Context, ComputedUrl};
 use values::computed::{LengthOrPercentage, LengthOrPercentageOrAuto};
 use values::computed::{LengthOrPercentageOrNone, MaxLength, NonNegativeAu};
 use values::computed::{NonNegativeNumber, Number, NumberOrPercentage, Percentage};
@@ -74,6 +74,7 @@ pub trait RepeatableListAnimatable: Animate {}
 /// not animatable from CSS animations or Web Animations. CSS transitions also does not allow
 /// animating 'display', but for CSS transitions we have the separate TransitionProperty type.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum AnimatableLonghand {
     % for prop in data.longhands:
@@ -203,7 +204,7 @@ pub fn nscsspropertyid_is_animatable(property: nsCSSPropertyID) -> bool {
 // NB: This needs to be here because it needs all the longhands generated
 // beforehand.
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ToCss)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, ToCss, ToComputedValue)]
 pub enum TransitionProperty {
     /// All, any transitionable property changing should generate a transition.
     All,
@@ -217,9 +218,6 @@ pub enum TransitionProperty {
     /// unknown property.
     Unsupported(CustomIdent)
 }
-
-
-impl ComputedValueAsSpecified for TransitionProperty {}
 
 impl TransitionProperty {
     /// Iterates over each longhand property.
@@ -247,21 +245,15 @@ impl TransitionProperty {
     /// Parse a transition-property value.
     pub fn parse<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
         let ident = input.expect_ident()?;
-        let supported = match_ignore_ascii_case! { &ident,
-            "all" => Ok(Some(TransitionProperty::All)),
+        match_ignore_ascii_case! { &ident,
+            "all" => Ok(TransitionProperty::All),
             % for prop in data.longhands + data.shorthands_except_all():
                 % if prop.transitionable:
-                    "${prop.name}" => Ok(Some(TransitionProperty::${prop.camel_case})),
+                    "${prop.name}" => Ok(TransitionProperty::${prop.camel_case}),
                 % endif
             % endfor
-            "none" => Err(()),
-            _ => Ok(None),
-        };
-
-        match supported {
-            Ok(Some(property)) => Ok(property),
-            Ok(None) => CustomIdent::from_ident(ident, &[]).map(TransitionProperty::Unsupported),
-            Err(()) => Err(SelectorParseError::UnexpectedIdent(ident.clone()).into()),
+            "none" => Err(SelectorParseError::UnexpectedIdent(ident.clone()).into()),
+            _ => CustomIdent::from_ident(ident, &[]).map(TransitionProperty::Unsupported),
         }
     }
 

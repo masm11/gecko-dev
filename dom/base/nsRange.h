@@ -102,6 +102,16 @@ public:
     return static_cast<uint32_t>(mEnd.Offset());
   }
 
+  nsIContent* GetChildAtStartOffset() const
+  {
+    return mStart.GetChildAtOffset();
+  }
+
+  nsIContent* GetChildAtEndOffset() const
+  {
+    return mEnd.GetChildAtOffset();
+  }
+
   bool IsPositioned() const
   {
     return mIsPositioned;
@@ -589,8 +599,14 @@ protected:
     template<typename A, typename B>
     RangeBoundaryBase& operator=(const RangeBoundaryBase<A,B>& aOther)
     {
-      mParent = aOther.mParent;
-      mRef = aOther.mRef;
+      // Since the member variables may be nsCOMPtrs, better to try to avoid
+      // extra Release/AddRef calls.
+      if (mParent != aOther.mParent) {
+        mParent = aOther.mParent;
+      }
+      if (mRef != aOther.mRef) {
+        mRef = aOther.mRef;
+      }
       mOffset = aOther.mOffset;
       return *this;
     }

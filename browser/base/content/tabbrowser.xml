@@ -669,7 +669,7 @@
               if (!this._shouldShowProgress(aRequest))
                 return;
 
-              if (this.mTotalProgress)
+              if (this.mTotalProgress && aWebProgress && aWebProgress.isTopLevel)
                 this.mTab.setAttribute("progress", "true");
 
               this._callProgressListeners("onProgressChange",
@@ -756,7 +756,8 @@
                 }
 
                 if (this._shouldShowProgress(aRequest)) {
-                  if (!(aStateFlags & nsIWebProgressListener.STATE_RESTORING)) {
+                  if (!(aStateFlags & nsIWebProgressListener.STATE_RESTORING) &&
+                      aWebProgress && aWebProgress.isTopLevel) {
                     this.mTab.setAttribute("busy", "true");
                     this._syncThrobberAnimations();
                   }
@@ -1018,6 +1019,20 @@
           <![CDATA[
             let browser = aTab ? this.getBrowserForTab(aTab) : this.selectedBrowser;
             return browser.mIconURL;
+          ]]>
+        </body>
+      </method>
+
+      <method name="setPageInfo">
+        <parameter name="aURL"/>
+        <parameter name="aDescription"/>
+        <parameter name="aPreviewImage"/>
+        <body>
+          <![CDATA[
+            if (aURL) {
+              let pageInfo = {url: aURL, description: aDescription, previewImageURL: aPreviewImage}
+              PlacesUtils.history.update(pageInfo).catch(Components.utils.reportError);
+            }
           ]]>
         </body>
       </method>
@@ -5164,7 +5179,9 @@
         <parameter name="aTab"/>
         <body>
           <![CDATA[
-            this._getSwitcher().warmupTab(aTab);
+            if (gMultiProcessBrowser) {
+              this._getSwitcher().warmupTab(aTab);
+            }
           ]]>
         </body>
       </method>
@@ -6695,6 +6712,7 @@
 
           if (this.getAttribute("movingtab") != "true") {
             this.setAttribute("movingtab", "true");
+            this.parentNode.setAttribute("movingtab", "true");
             this.selectedItem = draggedTab;
           }
 
@@ -6798,6 +6816,7 @@
             tab.style.transform = "";
 
           this.removeAttribute("movingtab");
+          this.parentNode.removeAttribute("movingtab");
 
           this._handleTabSelect();
         ]]></body>

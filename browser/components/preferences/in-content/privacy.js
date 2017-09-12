@@ -264,6 +264,15 @@ var gPrivacyPane = {
     appendSearchKeywords("showPasswords", [
       signonBundle.getString("loginsDescriptionAll2"),
     ]);
+    appendSearchKeywords("cookieExceptions", [
+      bundlePrefs.getString("cookiepermissionstext"),
+    ]);
+    appendSearchKeywords("showCookiesButton", [
+      bundlePrefs.getString("cookiesAll"),
+      bundlePrefs.getString("removeAllCookies.label"),
+      bundlePrefs.getString("removeAllShownCookies.label"),
+      bundlePrefs.getString("removeSelectedCookies.label"),
+    ]);
     appendSearchKeywords("trackingProtectionExceptions", [
       bundlePrefs.getString("trackingprotectionpermissionstitle"),
       bundlePrefs.getString("trackingprotectionpermissionstext2"),
@@ -1647,7 +1656,8 @@ var gPrivacyPane = {
 
   _initA11yString() {
     let a11yLearnMoreLink =
-      Services.urlFormatter.formatURLPref("accessibility.support.url");
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "accessibility";
     document.getElementById("a11yLearnMoreLink")
       .setAttribute("href", a11yLearnMoreLink);
   },

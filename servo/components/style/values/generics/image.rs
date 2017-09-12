@@ -8,29 +8,71 @@
 
 use Atom;
 use cssparser::serialize_identifier;
-use custom_properties::SpecifiedValue;
+use custom_properties;
 use std::fmt;
 use style_traits::ToCss;
-use values::computed::ComputedValueAsSpecified;
+use values::computed::{Context, ToComputedValue};
 
 /// An [image].
 ///
 /// [image]: https://drafts.csswg.org/css-images/#image-values
-#[derive(Clone, PartialEq, ToComputedValue)]
+#[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum Image<Gradient, MozImageRect, ImageUrl> {
     /// A `<url()>` image.
     Url(ImageUrl),
-    /// A `<gradient>` image.
-    Gradient(Gradient),
-    /// A `-moz-image-rect` image
-    Rect(MozImageRect),
+    /// A `<gradient>` image.  Gradients are rather large, and not nearly as
+    /// common as urls, so we box them here to keep the size of this enum sane.
+    Gradient(Box<Gradient>),
+    /// A `-moz-image-rect` image.  Also fairly large and rare.
+    Rect(Box<MozImageRect>),
     /// A `-moz-element(# <element-id>)`
     Element(Atom),
     /// A paint worklet image.
     /// https://drafts.css-houdini.org/css-paint-api/
     #[cfg(feature = "servo")]
     PaintWorklet(PaintWorklet),
+}
+
+// Can't just use derive(ToComputedValue) on Image, because when trying to do
+// "impl<T> ToComputedValue for Box<T>" the Rust compiler complains that
+// "impl<T> ToComputedValue for T where T: ComputedValueAsSpecified + Clone"
+// aleady implements ToComputedValue for std::boxed::Box<_> and hence we have
+// conflicting implementations.
+impl<Gradient: ToComputedValue,
+     MozImageRect: ToComputedValue,
+     ImageUrl: ToComputedValue> ToComputedValue for Image<Gradient, MozImageRect, ImageUrl> {
+    type ComputedValue = Image<<Gradient as ToComputedValue>::ComputedValue,
+                               <MozImageRect as ToComputedValue>::ComputedValue,
+                               <ImageUrl as ToComputedValue>::ComputedValue>;
+
+    #[inline]
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match *self {
+            Image::Url(ref url) => Image::Url(url.to_computed_value(context)),
+            Image::Gradient(ref gradient) =>
+                Image::Gradient(Box::new(gradient.to_computed_value(context))),
+            Image::Rect(ref rect) => Image::Rect(Box::new(rect.to_computed_value(context))),
+            Image::Element(ref atom) => Image::Element(atom.to_computed_value(context)),
+            #[cfg(feature = "servo")]
+            Image::PaintWorklet(ref worklet) => Image::PaintWorklet(worklet.to_computed_value(context)),
+        }
+    }
+
+    #[inline]
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        match *computed {
+            Image::Url(ref url) => Image::Url(ImageUrl::from_computed_value(url)),
+            Image::Gradient(ref boxed_gradient) =>
+                Image::Gradient(Box::new(Gradient::from_computed_value(&*boxed_gradient))),
+            Image::Rect(ref boxed_rect) =>
+                Image::Rect(Box::new(MozImageRect::from_computed_value(&*boxed_rect))),
+            Image::Element(ref atom) => Image::Element(Atom::from_computed_value(atom)),
+            #[cfg(feature = "servo")]
+            Image::PaintWorklet(ref worklet) =>
+                Image::PaintWorklet(PaintWorklet::from_computed_value(worklet)),
+        }
+    }
 }
 
 /// A CSS gradient.
@@ -111,7 +153,7 @@ define_css_keyword_enum!(ShapeExtent:
     "contain" => Contain,
     "cover" => Cover
 );
-impl ComputedValueAsSpecified for ShapeExtent {}
+add_impls_for_keyword_enum!(ShapeExtent);
 
 /// A gradient item.
 /// https://drafts.csswg.org/css-images-4/#color-stop-syntax
@@ -144,10 +186,10 @@ pub struct PaintWorklet {
     pub name: Atom,
     /// The arguments for the worklet.
     /// TODO: store a parsed representation of the arguments.
-    pub arguments: Vec<SpecifiedValue>,
+    pub arguments: Vec<custom_properties::SpecifiedValue>,
 }
 
-impl ComputedValueAsSpecified for PaintWorklet {}
+trivial_to_computed_value!(PaintWorklet);
 
 impl ToCss for PaintWorklet {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result where W: fmt::Write {

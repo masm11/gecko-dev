@@ -8314,16 +8314,11 @@ nsDocShell::CanSavePresentation(uint32_t aLoadType,
     return false;
   }
 
-  // Don't cache the content viewer if we're in a subframe and the subframe
-  // pref is disabled.
-  bool cacheFrames =
-    Preferences::GetBool("browser.sessionhistory.cache_subframes", false);
-  if (!cacheFrames) {
-    nsCOMPtr<nsIDocShellTreeItem> root;
-    GetSameTypeParent(getter_AddRefs(root));
-    if (root && root != this) {
-      return false;  // this is a subframe load
-    }
+  // Don't cache the content viewer if we're in a subframe.
+  nsCOMPtr<nsIDocShellTreeItem> root;
+  GetSameTypeParent(getter_AddRefs(root));
+  if (root && root != this) {
+    return false;  // this is a subframe load
   }
 
   // If the document does not want its presentation cached, then don't.
@@ -9145,7 +9140,7 @@ nsDocShell::RestoreFromHistory()
       mContentViewer->SetBounds(newBounds);
     } else {
       nsIScrollableFrame* rootScrollFrame =
-        shell->GetRootScrollFrameAsScrollableExternal();
+        shell->GetRootScrollFrameAsScrollable();
       if (rootScrollFrame) {
         rootScrollFrame->PostScrolledAreaEventForCurrentArea();
       }
@@ -13590,7 +13585,7 @@ nsDocShell::GetRootScrollFrame()
   nsCOMPtr<nsIPresShell> shell = GetPresShell();
   NS_ENSURE_TRUE(shell, nullptr);
 
-  return shell->GetRootScrollFrameAsScrollableExternal();
+  return shell->GetRootScrollFrameAsScrollable();
 }
 
 NS_IMETHODIMP
@@ -13678,7 +13673,8 @@ nsDocShell::EnsureFind()
   // default to our window
   nsCOMPtr<nsPIDOMWindowOuter> ourWindow = do_QueryInterface(scriptGO);
   nsCOMPtr<nsPIDOMWindowOuter> windowToSearch;
-  nsFocusManager::GetFocusedDescendant(ourWindow, true,
+  nsFocusManager::GetFocusedDescendant(ourWindow,
+                                       nsFocusManager::eIncludeAllDescendants,
                                        getter_AddRefs(windowToSearch));
 
   nsCOMPtr<nsIWebBrowserFindInFrames> findInFrames = do_QueryInterface(mFind);
@@ -13993,7 +13989,8 @@ nsDocShell::GetControllerForCommand(const char* aCommand,
   nsCOMPtr<nsPIWindowRoot> root = mScriptGlobal->GetTopWindowRoot();
   NS_ENSURE_TRUE(root, NS_ERROR_FAILURE);
 
-  return root->GetControllerForCommand(aCommand, aResult);
+  return root->GetControllerForCommand(aCommand, false /* for any window */,
+                                       aResult);
 }
 
 NS_IMETHODIMP

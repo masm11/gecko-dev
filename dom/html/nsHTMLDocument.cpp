@@ -2822,7 +2822,8 @@ nsHTMLDocument::EditingStateChanged()
     if (designMode) {
       nsCOMPtr<nsPIDOMWindowOuter> focusedWindow;
       nsIContent* focusedContent =
-        nsFocusManager::GetFocusedDescendant(window, false,
+        nsFocusManager::GetFocusedDescendant(window,
+                                             nsFocusManager::eOnlyCurrentWindow,
                                              getter_AddRefs(focusedWindow));
       if (focusedContent) {
         nsIFrame* focusedFrame = focusedContent->GetPrimaryFrame();
@@ -3241,9 +3242,10 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
 
   bool isCutCopy = (commandID.LowerCaseEqualsLiteral("cut") ||
                     commandID.LowerCaseEqualsLiteral("copy"));
+  bool isPaste = commandID.LowerCaseEqualsLiteral("paste");
 
   // if editing is not on, bail
-  if (!isCutCopy && !IsEditingOnAfterFlush()) {
+  if (!isCutCopy && !isPaste && !IsEditingOnAfterFlush()) {
     return false;
   }
 
@@ -3284,9 +3286,8 @@ nsHTMLDocument::ExecCommand(const nsAString& commandID,
     return false;
   }
 
-  bool restricted = commandID.LowerCaseEqualsLiteral("paste");
-  if (restricted && !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
-                                                            nsGkAtoms::clipboardRead)) {
+  if (isPaste && !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
+                                                         nsGkAtoms::clipboardRead)) {
     return false;
   }
 

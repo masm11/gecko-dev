@@ -168,7 +168,7 @@ pref(dom.animations-api.core.enabled,true) load 1340344.html
 load 1342316-1.html
 load 1356601-1.html
 load 1370793-1.xhtml
-load 1371450-1.html
+skip-if(Android) load 1371450-1.html
 load 1374175-1.html
 load 1375812-1.html
 load 1377053-1.html
@@ -212,3 +212,9 @@ load 1393791.html
 load 1384232.html
 load 1395725.html
 load 1396041.html
+load 1397363-1.html
+load 1397439-1.html
+load 1395719.html
+load 1397091.html
+load 1398479.html
+load 1398581.html

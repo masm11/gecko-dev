@@ -218,7 +218,7 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
 /// off the upper bits) at the expense of making the fourth somewhat more
 /// complicated to assemble, because we often bail out before checking all the
 /// hashes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq)]
 pub struct AncestorHashes {
     pub packed_hashes: [u32; 3],
 }
@@ -423,7 +423,6 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         ))
     }
 
-
     /// Returns an iterator over this selector in matching order (right-to-left).
     /// When a combinator is reached, the iterator will return None, and
     /// next_sequence() may be called to continue to the next sequence.
@@ -493,6 +492,11 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// Returns count of simple selectors and combinators in the Selector.
     pub fn len(&self) -> usize {
         self.0.slice.len()
+    }
+
+    /// Returns the address on the heap of the ThinArc for memory reporting.
+    pub fn thin_arc_heap_ptr(&self) -> *const ::std::os::raw::c_void {
+        self.0.heap_ptr()
     }
 }
 

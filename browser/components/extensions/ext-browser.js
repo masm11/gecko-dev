@@ -514,12 +514,10 @@ class TabTracker extends TabTrackerBase {
   }
 
   getBrowserData(browser) {
-    if (browser.ownerGlobal.location.href === "about:addons") {
+    if (browser.ownerDocument.documentURI === "about:addons") {
       // When we're loaded into a <browser> inside about:addons, we need to go up
       // one more level.
-      browser = browser.ownerGlobal.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDocShell)
-                       .chromeEventHandler;
+      browser = browser.ownerDocument.docShell.chromeEventHandler;
     }
 
     let result = {

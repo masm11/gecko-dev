@@ -1289,7 +1289,8 @@ js::AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj, ObjectGro
     MOZ_ASSERT(!obj->group()->unknownProperties());
 
     // First copy the dynamic flags.
-    MarkObjectGroupFlags(cx, obj, oldGroup->flags() & OBJECT_FLAG_DYNAMIC_MASK);
+    MarkObjectGroupFlags(cx, obj, oldGroup->flags() &
+                         (OBJECT_FLAG_DYNAMIC_MASK & ~OBJECT_FLAG_UNKNOWN_PROPERTIES));
 
     // Now update all property types. If the object has many properties, this
     // function may be slow so we mark all properties as unknown.
@@ -1855,34 +1856,6 @@ js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj, HandleId id,
     Rooted<PropertyDescriptor> desc(cx);
     desc.initFields(nullptr, value, attrs, getter, setter);
     return NativeDefineProperty(cx, obj, id, desc, result);
-}
-
-bool
-js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj, PropertyName* name,
-                         HandleValue value, GetterOp getter, SetterOp setter, unsigned attrs,
-                         ObjectOpResult& result)
-{
-    RootedId id(cx, NameToId(name));
-    return NativeDefineProperty(cx, obj, id, value, getter, setter, attrs, result);
-}
-
-bool
-js::NativeDefineElement(JSContext* cx, HandleNativeObject obj, uint32_t index,
-                        HandleValue value, GetterOp getter, SetterOp setter, unsigned attrs,
-                        ObjectOpResult& result)
-{
-    RootedId id(cx);
-    if (index <= JSID_INT_MAX) {
-        id = INT_TO_JSID(index);
-        return NativeDefineProperty(cx, obj, id, value, getter, setter, attrs, result);
-    }
-
-    AutoRooterGetterSetter gsRoot(cx, attrs, &getter, &setter);
-
-    if (!IndexToId(cx, index, &id))
-        return false;
-
-    return NativeDefineProperty(cx, obj, id, value, getter, setter, attrs, result);
 }
 
 bool
@@ -2569,7 +2542,7 @@ js::SetPropertyByDefining(JSContext* cx, HandleId id, HandleValue v, HandleValue
         existing
         ? JSPROP_IGNORE_ENUMERATE | JSPROP_IGNORE_READONLY | JSPROP_IGNORE_PERMANENT
         : JSPROP_ENUMERATE;
-    return DefineProperty(cx, receiver, id, v, nullptr, nullptr, attrs, result);
+    return DefineDataProperty(cx, receiver, id, v, attrs, result);
 }
 
 // When setting |id| for |receiver| and |obj| has no property for id, continue

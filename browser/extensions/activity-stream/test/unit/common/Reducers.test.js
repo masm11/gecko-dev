@@ -26,12 +26,20 @@ describe("Reducers", () => {
       const nextState = App(undefined, {type: at.LOCALE_UPDATED});
       assert.equal(nextState, INITIAL_STATE.App);
     });
-    it("should set locale, strings on LOCALE_UPDATE", () => {
+    it("should set locale, strings and text direction on LOCALE_UPDATE", () => {
       const strings = {};
       const action = {type: "LOCALE_UPDATED", data: {locale: "zh-CN", strings}};
       const nextState = App(undefined, action);
       assert.propertyVal(nextState, "locale", "zh-CN");
       assert.propertyVal(nextState, "strings", strings);
+      assert.propertyVal(nextState, "textDirection", "ltr");
+    });
+    it("should set rtl text direction for RTL locales", () => {
+      const action = {type: "LOCALE_UPDATED", data: {locale: "ar"}};
+
+      const nextState = App(undefined, action);
+
+      assert.propertyVal(nextState, "textDirection", "rtl");
     });
   });
   describe("TopSites", () => {
@@ -68,7 +76,7 @@ describe("Reducers", () => {
           url: "bar.com",
           bookmarkGuid: "bookmark123",
           bookmarkTitle: "Title for bar.com",
-          lastModified: 1234567
+          dateAdded: 1234567
         }
       };
       const nextState = TopSites(oldState, action);
@@ -77,7 +85,7 @@ describe("Reducers", () => {
       assert.equal(newRow.url, action.data.url);
       assert.equal(newRow.bookmarkGuid, action.data.bookmarkGuid);
       assert.equal(newRow.bookmarkTitle, action.data.bookmarkTitle);
-      assert.equal(newRow.bookmarkDateCreated, action.data.lastModified);
+      assert.equal(newRow.bookmarkDateCreated, action.data.dateAdded);
 
       // old row is unchanged
       assert.equal(nextState.rows[0], oldState.rows[0]);
@@ -92,7 +100,7 @@ describe("Reducers", () => {
           url: "bar.com",
           bookmarkGuid: "bookmark123",
           bookmarkTitle: "Title for bar.com",
-          lastModified: 123456
+          dateAdded: 123456
         }]
       };
       const action = {type: at.PLACES_BOOKMARK_REMOVED, data: {url: "bar.com"}};
@@ -211,7 +219,8 @@ describe("Reducers", () => {
         title: `Foo Bar ${i}`,
         initialized: false,
         rows: [{url: "www.foo.bar"}, {url: "www.other.url"}],
-        order: i
+        order: i,
+        type: "history"
       }));
     });
 
@@ -253,6 +262,24 @@ describe("Reducers", () => {
       const newState = Sections(oldState, action);
       assert.equal(newState[0].id, newSection.id);
       assert.ok(newState[0].order < newState[1].order);
+    });
+    it("should insert sections with a 0 `order` at the top on SECTION_REGISTER", () => {
+      const newSection = {id: "new_section", order: 0};
+      const action = {type: at.SECTION_REGISTER, data: newSection};
+      const newState = Sections(oldState, action);
+      assert.equal(newState[0].id, newSection.id);
+    });
+    it("should insert sections with a 1 `order` in the right spot on SECTION_REGISTER", () => {
+      const newSection = {id: "new_section", order: 1};
+      const action = {type: at.SECTION_REGISTER, data: newSection};
+      const newState = Sections(oldState, action);
+      assert.equal(newState[1].id, newSection.id);
+    });
+    it("should insert sections with higher `order` than any existing at the bottom on SECTION_REGISTER", () => {
+      const newSection = {id: "new_section", order: 10000};
+      const action = {type: at.SECTION_REGISTER, data: newSection};
+      const newState = Sections(oldState, action);
+      assert.equal(newState[newState.length - 1].id, newSection.id);
     });
     it("should set newSection.rows === [] if no rows are provided on SECTION_REGISTER", () => {
       const action = {type: at.SECTION_REGISTER, data: {id: "foo_bar_5", title: "Foo Bar 5"}};
@@ -328,7 +355,7 @@ describe("Reducers", () => {
           url: "www.foo.bar",
           bookmarkGuid: "bookmark123",
           bookmarkTitle: "Title for bar.com",
-          lastModified: 1234567
+          dateAdded: 1234567
         }
       };
       const nextState = Sections(oldState, action);
@@ -338,9 +365,10 @@ describe("Reducers", () => {
 
       // new row has bookmark data
       assert.equal(newRow.url, action.data.url);
+      assert.equal(newRow.type, "bookmark");
       assert.equal(newRow.bookmarkGuid, action.data.bookmarkGuid);
       assert.equal(newRow.bookmarkTitle, action.data.bookmarkTitle);
-      assert.equal(newRow.bookmarkDateCreated, action.data.lastModified);
+      assert.equal(newRow.bookmarkDateCreated, action.data.dateAdded);
 
       // old row is unchanged
       assert.equal(oldRow, oldState[0].rows[1]);
@@ -362,14 +390,16 @@ describe("Reducers", () => {
         item.rows[0].bookmarkGuid = "bookmark123";
         item.rows[0].bookmarkTitle = "Title for bar.com";
         item.rows[0].bookmarkDateCreated = 1234567;
+        item.rows[0].type = "bookmark";
       });
       const nextState = Sections(oldState, action);
       // check a section to ensure the correct bookmark was removed
       const newRow = nextState[0].rows[0];
       const oldRow = nextState[0].rows[1];
 
-      // new row has bookmark data
+      // new row isn't a bookmark
       assert.equal(newRow.url, action.data.url);
+      assert.equal(newRow.type, "history");
       assert.isUndefined(newRow.bookmarkGuid);
       assert.isUndefined(newRow.bookmarkTitle);
       assert.isUndefined(newRow.bookmarkDateCreated);

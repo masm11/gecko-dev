@@ -21,6 +21,7 @@ const UPDATE_TIME = 15 * 60 * 1000; // 15 minutes
 const DEFAULT_SITES_PREF = "default.sites";
 const DEFAULT_TOP_SITES = [];
 const FRECENCY_THRESHOLD = 100; // 1 visit (skip first-run/one-time pages)
+const MIN_FAVICON_SIZE = 96;
 
 this.TopSitesFeed = class TopSitesFeed {
   constructor() {
@@ -81,6 +82,10 @@ this.TopSitesFeed = class TopSitesFeed {
     return pinned.slice(0, TOP_SITES_SHOWMORE_LENGTH);
   }
   async refresh(target = null) {
+    if (!this._tippyTopProvider.initialized) {
+      await this._tippyTopProvider.init();
+    }
+
     const links = await this.getLinksWithDefaults();
 
     // First, cache existing screenshots in case we need to reuse them
@@ -91,13 +96,13 @@ this.TopSitesFeed = class TopSitesFeed {
       }
     }
 
-    // Now, get a tippy top icon or screenshot for every item
+    // Now, get a tippy top icon, a rich icon, or screenshot for every item
     for (let link of links) {
       if (!link) { continue; }
 
-      // Check for tippy top icon.
+      // Check for tippy top icon or a rich icon.
       link = this._tippyTopProvider.processSite(link);
-      if (link.tippyTopIcon) { continue; }
+      if (link.tippyTopIcon || link.faviconSize >= MIN_FAVICON_SIZE) { continue; }
 
       // If no tippy top, then we get a screenshot.
       if (currentScreenshots[link.url]) {
@@ -165,7 +170,6 @@ this.TopSitesFeed = class TopSitesFeed {
   async onAction(action) {
     switch (action.type) {
       case at.INIT:
-        await this._tippyTopProvider.init();
         this.refresh();
         break;
       case at.NEW_TAB_LOAD:

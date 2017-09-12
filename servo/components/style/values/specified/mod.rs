@@ -19,9 +19,8 @@ use style_traits::values::specified::AllowedNumericType;
 use super::{Auto, CSSFloat, CSSInteger, Either, None_};
 use super::computed::{Context, ToComputedValue};
 use super::generics::{GreaterThanOrEqualToOne, NonNegative};
-use super::generics::grid::{TrackBreadth as GenericTrackBreadth, TrackSize as GenericTrackSize};
-use super::generics::grid::TrackList as GenericTrackList;
-use values::computed::ComputedValueAsSpecified;
+use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
+use super::generics::grid::{TrackSize as GenericTrackSize, TrackList as GenericTrackList};
 use values::specified::calc::CalcNode;
 
 pub use properties::animated_properties::TransitionProperty;
@@ -52,7 +51,6 @@ pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind, SVGStrokeDash
 pub use self::text::{InitialLetter, LetterSpacing, LineHeight, WordSpacing};
 pub use self::time::Time;
 pub use self::transform::{TimingFunction, TransformOrigin};
-pub use super::generics::grid::GridLine;
 pub use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
 
 #[cfg(feature = "gecko")]
@@ -85,8 +83,6 @@ pub mod url {
 use cssparser::Parser;
 use parser::{Parse, ParserContext};
 use style_traits::ParseError;
-#[cfg(feature = "gecko")]
-use values::computed::ComputedValueAsSpecified;
 
 #[cfg(feature = "servo")]
 pub use ::servo::url::*;
@@ -101,10 +97,6 @@ impl Parse for SpecifiedUrl {
 }
 
 impl Eq for SpecifiedUrl {}
-
-#[cfg(feature = "gecko")]
-impl ComputedValueAsSpecified for SpecifiedUrl {}
-
 }
 
 /// Parse an `<integer>` value, handling `calc()` correctly.
@@ -356,9 +348,11 @@ impl ToComputedValue for Opacity {
     }
 }
 
+/// An specified `<integer>`, optionally coming from a `calc()` expression.
+///
+/// https://drafts.csswg.org/css-values/#integers
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[allow(missing_docs)]
 pub struct Integer {
     value: CSSInteger,
     was_calc: bool,
@@ -387,7 +381,6 @@ impl Integer {
     }
 }
 
-
 impl Parse for Integer {
     fn parse<'i, 't>(context: &ParserContext, input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
         parse_integer(context, input)
@@ -395,25 +388,37 @@ impl Parse for Integer {
 }
 
 impl Integer {
-    #[allow(missing_docs)]
-    pub fn parse_with_minimum<'i, 't>(context: &ParserContext, input: &mut Parser<'i, 't>, min: i32)
-                                      -> Result<Integer, ParseError<'i>> {
+    /// Parse an integer value which is at least `min`.
+    pub fn parse_with_minimum<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        min: i32
+    ) -> Result<Integer, ParseError<'i>> {
         match parse_integer(context, input) {
+            // FIXME(emilio): The spec asks us to avoid rejecting it at parse
+            // time except until computed value time.
+            //
+            // It's not totally clear it's worth it though, and no other browser
+            // does this.
             Ok(value) if value.value() >= min => Ok(value),
             Ok(_value) => Err(StyleParseError::UnspecifiedError.into()),
             Err(e) => Err(e),
         }
     }
 
-    #[allow(missing_docs)]
-    pub fn parse_non_negative<'i, 't>(context: &ParserContext, input: &mut Parser<'i, 't>)
-                                      -> Result<Integer, ParseError<'i>> {
+    /// Parse a non-negative integer.
+    pub fn parse_non_negative<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Integer, ParseError<'i>> {
         Integer::parse_with_minimum(context, input, 0)
     }
 
-    #[allow(missing_docs)]
-    pub fn parse_positive<'i, 't>(context: &ParserContext, input: &mut Parser<'i, 't>)
-                                  -> Result<Integer, ParseError<'i>> {
+    /// Parse a positive integer (>= 1).
+    pub fn parse_positive<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>
+    ) -> Result<Integer, ParseError<'i>> {
         Integer::parse_with_minimum(context, input, 1)
     }
 }
@@ -484,10 +489,13 @@ pub type TrackSize = GenericTrackSize<LengthOrPercentage>;
 
 /// The specified value of a grid `<track-list>`
 /// (could also be `<auto-track-list>` or `<explicit-track-list>`)
-pub type TrackList = GenericTrackList<LengthOrPercentage>;
+pub type TrackList = GenericTrackList<LengthOrPercentage, Integer>;
+
+/// The specified value of a `<grid-line>`.
+pub type GridLine = GenericGridLine<Integer>;
 
 /// `<grid-template-rows> | <grid-template-columns>`
-pub type GridTemplateComponent = GenericGridTemplateComponent<LengthOrPercentage>;
+pub type GridTemplateComponent = GenericGridTemplateComponent<LengthOrPercentage, Integer>;
 
 /// <length> | <percentage> | <number>
 pub type LengthOrPercentageOrNumber = Either<Number, LengthOrPercentage>;
@@ -666,8 +674,8 @@ pub type NamespaceId = ();
 /// An attr(...) rule
 ///
 /// `[namespace? `|`]? ident`
-#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[derive(Clone, Debug, Eq, PartialEq, ToComputedValue)]
 pub struct Attr {
     /// Optional namespace
     pub namespace: Option<(Namespace, NamespaceId)>,
@@ -762,5 +770,3 @@ impl ToCss for Attr {
         dest.write_str(")")
     }
 }
-
-impl ComputedValueAsSpecified for Attr {}

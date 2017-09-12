@@ -479,23 +479,17 @@ var PlacesCommandHook = {
     if (!aShowEditUI)
       return;
 
-    // Try to dock the panel to:
-    // 1. the bookmarks menu button
-    // 2. the identity icon
-    // 3. the content area
-    if (BookmarkingUI.anchor && isVisible(BookmarkingUI.anchor)) {
-      await StarUI.showEditBookmarkPopup(itemId, BookmarkingUI.anchor,
-                                        "bottomcenter topright", isNewBookmark, uri);
+    let anchor = BookmarkingUI.anchor;
+    if (anchor) {
+      await StarUI.showEditBookmarkPopup(itemId, anchor,
+                                         "bottomcenter topright", isNewBookmark,
+                                         uri);
       return;
     }
 
-    let identityIcon = document.getElementById("identity-icon");
-    if (isVisible(identityIcon)) {
-      await StarUI.showEditBookmarkPopup(itemId, identityIcon,
-                                        "bottomcenter topright", isNewBookmark, uri);
-    } else {
-      await StarUI.showEditBookmarkPopup(itemId, aBrowser, "overlap", isNewBookmark, uri);
-    }
+    // Fall back to showing the panel over the content area.
+    await StarUI.showEditBookmarkPopup(itemId, aBrowser, "overlap",
+                                       isNewBookmark, uri);
   },
 
   // TODO: Replace bookmarkPage code with this function once legacy
@@ -561,23 +555,16 @@ var PlacesCommandHook = {
 
     let node = await PlacesUIUtils.promiseNodeLikeFromFetchInfo(info);
 
-    // Try to dock the panel to:
-    // 1. the bookmarks menu button
-    // 2. the identity icon
-    // 3. the content area
-    if (BookmarkingUI.anchor && isVisible(BookmarkingUI.anchor)) {
-      await StarUI.showEditBookmarkPopup(node, BookmarkingUI.anchor,
-                                   "bottomcenter topright", isNewBookmark, url);
+    let anchor = BookmarkingUI.anchor;
+    if (anchor) {
+      await StarUI.showEditBookmarkPopup(node, anchor, "bottomcenter topright",
+                                         isNewBookmark, url);
       return;
     }
 
-    let identityIcon = document.getElementById("identity-icon");
-    if (isVisible(identityIcon)) {
-      await StarUI.showEditBookmarkPopup(node, identityIcon,
-                                   "bottomcenter topright", isNewBookmark, url);
-    } else {
-      await StarUI.showEditBookmarkPopup(node, aBrowser, "overlap", isNewBookmark, url);
-    }
+    // Fall back to showing the panel over the content area.
+    await StarUI.showEditBookmarkPopup(node, aBrowser, "overlap", isNewBookmark,
+                                       url);
   },
 
   _getPageDetails(browser) {
@@ -1153,7 +1140,7 @@ var PlacesToolbarHelper = {
     return document.getElementById("PlacesToolbar");
   },
 
-  init: function PTH_init(forceToolbarOverflowCheck) {
+  init: function PTH_init() {
     let viewElt = this._viewElt;
     if (!viewElt || viewElt._placesView)
       return;
@@ -1161,6 +1148,11 @@ var PlacesToolbarHelper = {
     // CustomizableUI.addListener is idempotent, so we can safely
     // call this multiple times.
     CustomizableUI.addListener(this);
+
+    if (!this._isObservingToolbars) {
+      this._isObservingToolbars = true;
+      window.addEventListener("toolbarvisibilitychange", this);
+    }
 
     // If the bookmarks toolbar item is:
     // - not in a toolbar, or;
@@ -1170,16 +1162,27 @@ var PlacesToolbarHelper = {
     // customizing, because that will happen when the customization is done.
     let toolbar = this._getParentToolbar(viewElt);
     if (!toolbar || toolbar.collapsed || this._isCustomizing ||
-        getComputedStyle(toolbar, "").display == "none")
+        getComputedStyle(toolbar, "").display == "none") {
       return;
+    }
 
     new PlacesToolbar(this._place);
-    if (forceToolbarOverflowCheck) {
-      viewElt._placesView.updateOverflowStatus();
+  },
+
+  handleEvent(event) {
+    switch (event.type) {
+      case "toolbarvisibilitychange":
+        if (event.target == this._getParentToolbar(this._viewElt))
+          this._resetView();
+        break;
     }
   },
 
   uninit: function PTH_uninit() {
+    if (this._isObservingToolbars) {
+      delete this._isObservingToolbars;
+      window.removeEventListener("toolbarvisibilitychange", this);
+    }
     CustomizableUI.removeListener(this);
   },
 
@@ -1195,7 +1198,7 @@ var PlacesToolbarHelper = {
 
   customizeDone: function PTH_customizeDone() {
     this._isCustomizing = false;
-    this.init(true);
+    this.init();
   },
 
   onPlaceholderCommand() {
@@ -1246,7 +1249,7 @@ var PlacesToolbarHelper = {
       if (this._viewElt._placesView) {
         this._viewElt._placesView.uninit();
       }
-      this.init(true);
+      this.init();
     }
   },
 };
@@ -1473,12 +1476,13 @@ var RecentBookmarksMenuUI = {
    * Handles onItemRemoved notifications from the bookmarks service.
    */
   onItemRemoved(itemId, parentId, index, itemType, uri, guid) {
+    if (!this.visible) {
+      return;
+    }
     // Update the menu when a bookmark has been removed.
     // The native menubar on Mac doesn't support live update, so this is
     // unlikely to be called there.
-    if (this._recentGuids.size == 0 ||
-        (guid && this._recentGuids.has(guid))) {
-
+    if (guid && this._recentGuids.has(guid)) {
       if (this._itemRemovedTimer) {
         clearTimeout(this._itemRemovedTimer);
       }
@@ -1519,13 +1523,16 @@ var LibraryUI = {
         !this.COSMETIC_ANIMATIONS_ENABLED) {
       return;
     }
+
     let animatableBox = document.getElementById("library-animatable-box");
     let navBar = document.getElementById("nav-bar");
     let libraryIcon = document.getAnonymousElementByAttribute(libraryButton, "class", "toolbarbutton-icon");
     let dwu = window.getInterface(Ci.nsIDOMWindowUtils);
     let iconBounds = dwu.getBoundsWithoutFlushing(libraryIcon);
     let libraryBounds = dwu.getBoundsWithoutFlushing(libraryButton);
+    let toolboxBounds = dwu.getBoundsWithoutFlushing(gNavToolbox);
 
+    animatableBox.style.setProperty("--toolbox-y", toolboxBounds.y + "px");
     animatableBox.style.setProperty("--library-button-y", libraryBounds.y + "px");
     animatableBox.style.setProperty("--library-button-height", libraryBounds.height + "px");
     animatableBox.style.setProperty("--library-icon-x", iconBounds.x + "px");
@@ -1535,7 +1542,6 @@ var LibraryUI = {
       animatableBox.removeAttribute("brighttext");
     }
     animatableBox.removeAttribute("fade");
-    gNavToolbox.setAttribute("animate", animation);
     libraryButton.setAttribute("animate", animation);
     animatableBox.setAttribute("animate", animation);
     if (!this._libraryButtonAnimationEndListeners[animation]) {
@@ -1558,7 +1564,6 @@ var LibraryUI = {
       let libraryButton = document.getElementById("library-button");
       // Put the 'fill' back in the normal icon.
       libraryButton.removeAttribute("animate");
-      gNavToolbox.removeAttribute("animate");
     }
   },
 };
@@ -1569,6 +1574,7 @@ var LibraryUI = {
 
 var BookmarkingUI = {
   STAR_ID: "star-button",
+  STAR_BOX_ID: "star-button-box",
   BOOKMARK_BUTTON_ID: "bookmarks-menu-button",
   BOOKMARK_BUTTON_SHORTCUT: "addBookmarkAsKb",
   get button() {
@@ -1582,8 +1588,24 @@ var BookmarkingUI = {
     return this.star = document.getElementById(this.STAR_ID);
   },
 
+  get starBox() {
+    delete this.starBox;
+    return this.starBox = document.getElementById(this.STAR_BOX_ID);
+  },
+
   get anchor() {
-    return this.star;
+    // Try to anchor the panel to:
+    // 1. The bookmarks star box (using the star itself is trickier because it
+    //    can be hidden while the star animation is visible)
+    // 2. The identity icon
+    if (this.starBox && isVisible(this.starBox)) {
+      return this.starBox;
+    }
+    let identityIcon = document.getElementById("identity-icon");
+    if (identityIcon && isVisible(identityIcon)) {
+      return identityIcon;
+    }
+    return null;
   },
 
   get notifier() {

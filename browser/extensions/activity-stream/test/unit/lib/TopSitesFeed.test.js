@@ -15,7 +15,7 @@ const FAKE_SCREENSHOT = "data123";
 
 function FakeTippyTopProvider() {}
 FakeTippyTopProvider.prototype = {
-  async init() {},
+  async init() { this.initialized = true; },
   processSite(site) { return site; }
 };
 
@@ -247,6 +247,11 @@ describe("Top Sites Feed", () => {
     });
   });
   describe("#refresh", () => {
+    it("should initialise _tippyTopProvider if it's not already initialised", async () => {
+      feed._tippyTopProvider.initialized = false;
+      await feed.refresh(action);
+      assert.ok(feed._tippyTopProvider.initialized);
+    });
     it("should dispatch an action with the links returned", async () => {
       sandbox.stub(feed, "getScreenshot");
       await feed.refresh(action);
@@ -284,6 +289,22 @@ describe("Top Sites Feed", () => {
       feed._tippyTopProvider.processSite = site => {
         site.tippyTopIcon = "icon.png";
         site.backgroundColor = "#fff";
+        return site;
+      };
+      await feed.refresh(action);
+      assert.calledOnce(feed.store.dispatch);
+      assert.notCalled(feed.getScreenshot);
+    });
+    it("should skip getting screenshot if there is an icon of size greater than 96x96 and no tippy top", async () => {
+      sandbox.stub(feed, "getScreenshot");
+      feed.getLinksWithDefaults = () => [{
+        url: "foo.com",
+        favicon: "data:foo",
+        faviconSize: 196
+      }];
+      feed._tippyTopProvider.processSite = site => {
+        site.tippyTopIcon = null;
+        site.backgroundColor = null;
         return site;
       };
       await feed.refresh(action);

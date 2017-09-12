@@ -22,6 +22,7 @@ const {SystemTickFeed} = Cu.import("resource://activity-stream/lib/SystemTickFee
 const {TelemetryFeed} = Cu.import("resource://activity-stream/lib/TelemetryFeed.jsm", {});
 const {TopSitesFeed} = Cu.import("resource://activity-stream/lib/TopSitesFeed.jsm", {});
 const {TopStoriesFeed} = Cu.import("resource://activity-stream/lib/TopStoriesFeed.jsm", {});
+const {HighlightsFeed} = Cu.import("resource://activity-stream/lib/HighlightsFeed.jsm", {});
 
 const DEFAULT_SITES = new Map([
   // This first item is the global list fallback for any unexpected geos
@@ -75,6 +76,10 @@ const PREFS_CONFIG = new Map([
   ["migrationRemainingDays", {
     title: "Number of days to show the manual migration message",
     value: 4
+  }],
+  ["prerender", {
+    title: "Use the prerendered version of activity-stream.html. This is set automatically by PrefsFeed.jsm.",
+    value: true
   }],
   ["showSearch", {
     title: "Show the Search bar on the New Tab page",
@@ -147,6 +152,12 @@ const FEEDS_DATA = [
     name: "sections",
     factory: () => new SectionsFeed(),
     title: "Manages sections",
+    value: true
+  },
+  {
+    name: "section.highlights",
+    factory: () => new HighlightsFeed(),
+    title: "Fetches content recommendations from places db",
     value: true
   },
   {

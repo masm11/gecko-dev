@@ -113,6 +113,12 @@ impl CalcLengthOrPercentage {
     #[inline]
     pub fn length(&self) -> Au {
         debug_assert!(self.percentage.is_none());
+        self.length_component()
+    }
+
+    /// Returns the length component of this `calc()`
+    #[inline]
+    pub fn length_component(&self) -> Au {
         self.clamping_mode.clamp(self.length)
     }
 
@@ -223,7 +229,7 @@ impl specified::CalcLengthOrPercentage {
         let mut length = Au(0);
 
         if let Some(absolute) = self.absolute {
-            length += zoom_fn(absolute);
+            length += zoom_fn(absolute.to_computed_value(context));
         }
 
         for val in &[self.vw.map(ViewportPercentageLength::Vw),
@@ -269,7 +275,7 @@ impl ToComputedValue for specified::CalcLengthOrPercentage {
     fn from_computed_value(computed: &CalcLengthOrPercentage) -> Self {
         specified::CalcLengthOrPercentage {
             clamping_mode: computed.clamping_mode,
-            absolute: Some(computed.length),
+            absolute: Some(AbsoluteLength::from_computed_value(&computed.length)),
             percentage: computed.percentage,
             ..Default::default()
         }
