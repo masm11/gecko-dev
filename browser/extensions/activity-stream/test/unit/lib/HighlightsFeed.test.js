@@ -5,8 +5,9 @@ const {actionTypes: at} = require("common/Actions.jsm");
 const {Dedupe} = require("common/Dedupe.jsm");
 
 const FAKE_LINKS = new Array(9).fill(null).map((v, i) => ({url: `http://www.site${i}.com`}));
+const FAKE_IMAGE = "data123";
 
-describe("Top Sites Feed", () => {
+describe("Highlights Feed", () => {
   let HighlightsFeed;
   let HIGHLIGHTS_UPDATE_TIME;
   let SECTION_ID;
@@ -15,7 +16,9 @@ describe("Top Sites Feed", () => {
   let sandbox;
   let links;
   let clock;
+  let fakeScreenshot;
   let fakeNewTabUtils;
+  let filterAdultStub;
   let sectionsManagerStub;
   let shortURLStub;
 
@@ -28,17 +31,33 @@ describe("Top Sites Feed", () => {
       enableSection: sinon.spy(),
       disableSection: sinon.spy(),
       updateSection: sinon.spy(),
+      updateSectionCard: sinon.spy(),
       sections: new Map([["highlights", {}]])
     };
+    fakeScreenshot = {getScreenshotForURL: sandbox.spy(() => Promise.resolve(FAKE_IMAGE))};
+    filterAdultStub = sinon.stub().returns([]);
     shortURLStub = sinon.stub().callsFake(site => site.url.match(/\/([^/]+)/)[1]);
     globals.set("NewTabUtils", fakeNewTabUtils);
     ({HighlightsFeed, HIGHLIGHTS_UPDATE_TIME, SECTION_ID} = injector({
+      "lib/FilterAdult.jsm": {filterAdult: filterAdultStub},
       "lib/ShortURL.jsm": {shortURL: shortURLStub},
       "lib/SectionsManager.jsm": {SectionsManager: sectionsManagerStub},
+      "lib/Screenshots.jsm": {Screenshots: fakeScreenshot},
       "common/Dedupe.jsm": {Dedupe}
     }));
     feed = new HighlightsFeed();
-    feed.store = {dispatch: sinon.spy(), getState() { return {TopSites: {rows: Array(12).fill(null).map((v, i) => ({url: `http://www.topsite${i}.com`}))}}; }};
+    feed.store = {
+      dispatch: sinon.spy(),
+      getState() { return this.state; },
+      state: {
+        Prefs: {values: {filterAdult: false}},
+        TopSites: {
+          initialized: true,
+          rows: Array(12).fill(null).map((v, i) => ({url: `http://www.topsite${i}.com`}))
+        }
+      },
+      subscribe: sinon.stub().callsFake(cb => { cb(); return () => {}; })
+    };
     links = FAKE_LINKS;
     clock = sinon.useFakeTimers();
   });
@@ -60,20 +79,55 @@ describe("Top Sites Feed", () => {
       assert.calledOnce(sectionsManagerStub.enableSection);
       assert.calledWith(sectionsManagerStub.enableSection, SECTION_ID);
     });
-    it("should *not* fetch highlights on init to avoid loading Places too early", () => {
+    it("should fetch highlights on postInit", () => {
       feed.fetchHighlights = sinon.spy();
-
-      feed.onAction({type: at.INIT});
-
-      assert.notCalled(feed.fetchHighlights);
+      feed.postInit();
+      assert.calledOnce(feed.fetchHighlights);
     });
   });
   describe("#fetchHighlights", () => {
-    it("should add hostname and image to each link", async () => {
-      links = [{url: "https://mozilla.org", preview_image_url: "https://mozilla.org/preview.jog"}];
+    it("should wait for TopSites to be initialised", async () => {
+      feed.store.getState = () => ({TopSites: {initialized: false}});
+      // Initially TopSites is uninitialised and fetchHighlights should wait
+      feed.fetchHighlights();
+      assert.calledOnce(feed.store.subscribe);
+      assert.notCalled(fakeNewTabUtils.activityStreamLinks.getHighlights);
+
+      // Initialisation causes the subscribe callback to be called and
+      // fetchHighlights should continue
+      feed.store.getState = () => ({TopSites: {initialized: true}});
+      const subscribeCallback = feed.store.subscribe.firstCall.args[0];
+      await subscribeCallback();
+      assert.calledOnce(fakeNewTabUtils.activityStreamLinks.getHighlights);
+
+      // If TopSites is initialised in the first place it shouldn't wait
+      feed.store.subscribe.reset();
+      fakeNewTabUtils.activityStreamLinks.getHighlights.reset();
+      feed.fetchHighlights();
+      assert.notCalled(feed.store.subscribe);
+      assert.calledOnce(fakeNewTabUtils.activityStreamLinks.getHighlights);
+    });
+    it("should add hostname and hasImage to each link", async () => {
+      links = [{url: "https://mozilla.org"}];
       await feed.fetchHighlights();
       assert.equal(feed.highlights[0].hostname, "mozilla.org");
-      assert.equal(feed.highlights[0].image, links[0].preview_image_url);
+      assert.equal(feed.highlights[0].hasImage, true);
+    });
+    it("should add an existing image if it exists to the link without calling fetchImage", async () => {
+      links = [{url: "https://mozilla.org", image: FAKE_IMAGE}];
+      feed.highlights = links;
+      sinon.spy(feed, "fetchImage");
+      await feed.fetchHighlights();
+      assert.equal(feed.highlights[0].image, FAKE_IMAGE);
+      assert.notCalled(feed.fetchImage);
+    });
+    it("should call fetchImage with the correct arguments for new links", async () => {
+      links = [{url: "https://mozilla.org", preview_image_url: "https://mozilla.org/preview.jog"}];
+      feed.highlights = [];
+      sinon.spy(feed, "fetchImage");
+      await feed.fetchHighlights();
+      assert.calledOnce(feed.fetchImage);
+      assert.calledWith(feed.fetchImage, links[0].url, links[0].preview_image_url);
     });
     it("should not include any links already in Top Sites", async () => {
       links = [
@@ -114,6 +168,45 @@ describe("Top Sites Feed", () => {
       links = [{url: "https://mozilla.org", type: "history", bookmarkGuid: "1234567890"}];
       await feed.fetchHighlights();
       assert.equal(feed.highlights[0].type, "bookmark");
+    });
+    it("should not filter out adult pages when pref is false", async() => {
+      await feed.fetchHighlights();
+
+      assert.notCalled(filterAdultStub);
+    });
+    it("should filter out adult pages when pref is true", async() => {
+      feed.store.state.Prefs.values.filterAdult = true;
+
+      await feed.fetchHighlights();
+
+      // The stub filters out everything
+      assert.calledOnce(filterAdultStub);
+      assert.equal(feed.highlights.length, 0);
+    });
+  });
+  describe("#fetchImage", () => {
+    const FAKE_URL = "https://mozilla.org";
+    const FAKE_IMAGE_URL = "https://mozilla.org/preview.jpg";
+    it("should capture the image, if available", async () => {
+      await feed.fetchImage(FAKE_URL, FAKE_IMAGE_URL);
+      assert.calledOnce(fakeScreenshot.getScreenshotForURL);
+      assert.calledWith(fakeScreenshot.getScreenshotForURL, FAKE_IMAGE_URL);
+    });
+    it("should fall back to capturing a screenshot", async () => {
+      await feed.fetchImage(FAKE_URL, undefined);
+      assert.calledOnce(fakeScreenshot.getScreenshotForURL);
+      assert.calledWith(fakeScreenshot.getScreenshotForURL, FAKE_URL);
+    });
+    it("should call SectionsManager.updateSectionCard with the right arguments", async () => {
+      await feed.fetchImage(FAKE_URL, FAKE_IMAGE_URL);
+      assert.calledOnce(sectionsManagerStub.updateSectionCard);
+      assert.calledWith(sectionsManagerStub.updateSectionCard, "highlights", FAKE_URL, {image: FAKE_IMAGE}, true);
+    });
+    it("should update the card in feed.highlights with the image", async () => {
+      feed.highlights = [{url: FAKE_URL}];
+      await feed.fetchImage(FAKE_URL, FAKE_IMAGE_URL);
+      const highlight = feed.highlights.find(({url}) => url === FAKE_URL);
+      assert.propertyVal(highlight, "image", FAKE_IMAGE);
     });
   });
   describe("#uninit", () => {

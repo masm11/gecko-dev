@@ -418,6 +418,7 @@ nsImageBoxFrame::PaintImage(gfxContext& aRenderingContext,
 
 DrawResult
 nsImageBoxFrame::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder,
+                                         mozilla::wr::IpcResourceUpdateQueue& aResources,
                                          const StackingContextHelper& aSc,
                                          mozilla::layers::WebRenderLayerManager* aManager,
                                          nsDisplayItem* aItem,
@@ -550,6 +551,7 @@ nsDisplayXULImage::BuildLayer(nsDisplayListBuilder* aBuilder,
 
 bool
 nsDisplayXULImage::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder,
+                                           mozilla::wr::IpcResourceUpdateQueue& aResources,
                                            const StackingContextHelper& aSc,
                                            nsTArray<WebRenderParentCommand>& aParentCommands,
                                            mozilla::layers::WebRenderLayerManager* aManager,
@@ -571,7 +573,7 @@ nsDisplayXULImage::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBui
   }
 
   DrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->
-    CreateWebRenderCommands(aBuilder, aSc, aManager, this, ToReferenceFrame(), flags);
+    CreateWebRenderCommands(aBuilder, aResources, aSc, aManager, this, ToReferenceFrame(), flags);
 
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   return true;
@@ -586,7 +588,7 @@ nsDisplayXULImage::AllocateGeometry(nsDisplayListBuilder* aBuilder)
 void
 nsDisplayXULImage::ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                              const nsDisplayItemGeometry* aGeometry,
-                                             nsRegion* aInvalidRegion)
+                                             nsRegion* aInvalidRegion) const
 {
   auto boxFrame = static_cast<nsImageBoxFrame*>(mFrame);
   auto geometry =
@@ -629,7 +631,7 @@ nsDisplayXULImage::GetImage()
 }
 
 nsRect
-nsDisplayXULImage::GetDestRect()
+nsDisplayXULImage::GetDestRect() const
 {
   Maybe<nsPoint> anchorPoint;
   return static_cast<nsImageBoxFrame*>(mFrame)->GetDestRect(ToReferenceFrame(), anchorPoint);

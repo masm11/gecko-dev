@@ -147,14 +147,14 @@ const listeners = {
     "Reader:ArticleGet": ["ReaderParent"],
     "Reader:FaviconRequest": ["ReaderParent"],
     "Reader:UpdateReaderButton": ["ReaderParent"],
-    // PLEASE KEEP THIS LIST IN SYNC WITH THE LISTENERS ADDED IN LoginManagerParent.init
+    // PLEASE KEEP THIS LIST IN SYNC WITH THE MOBILE LISTENERS IN BrowserCLH.js
     "RemoteLogins:findLogins": ["LoginManagerParent"],
     "RemoteLogins:findRecipes": ["LoginManagerParent"],
     "RemoteLogins:onFormSubmit": ["LoginManagerParent"],
     "RemoteLogins:autoCompleteLogins": ["LoginManagerParent"],
     "RemoteLogins:removeLogin": ["LoginManagerParent"],
     "RemoteLogins:insecureLoginFormPresent": ["LoginManagerParent"],
-    // PLEASE KEEP THIS LIST IN SYNC WITH THE LISTENERS ADDED IN LoginManagerParent.init
+    // PLEASE KEEP THIS LIST IN SYNC WITH THE MOBILE LISTENERS IN BrowserCLH.js
     "WCCR:registerProtocolHandler": ["Feeds"],
     "WCCR:registerContentHandler": ["Feeds"],
     "rtcpeer:CancelRequest": ["webrtcUI"],
@@ -1687,7 +1687,7 @@ BrowserGlue.prototype = {
 
   // eslint-disable-next-line complexity
   _migrateUI: function BG__migrateUI() {
-    const UI_VERSION = 53;
+    const UI_VERSION = 54;
     const BROWSER_DOCURL = "chrome://browser/content/browser.xul";
 
     let currentUIVersion;
@@ -2075,6 +2075,15 @@ BrowserGlue.prototype = {
           malwareList.replace("goog-malware-shavar", "goog-malware-proto");
           Services.prefs.setCharPref(MALWARE_PREF, malwareList);
         }
+      }
+    }
+
+    if (currentUIVersion < 54) {
+      // Migrate browser.onboarding.hidden to browser.onboarding.state.
+      if (Services.prefs.prefHasUserValue("browser.onboarding.hidden")) {
+        let state = Services.prefs.getBoolPref("browser.onboarding.hidden") ? "watermark" : "default";
+        Services.prefs.setStringPref("browser.onboarding.state", state);
+        Services.prefs.clearUserPref("browser.onboarding.hidden");
       }
     }
 

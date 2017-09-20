@@ -57,11 +57,6 @@ let onClick = evt => {
         Mozilla.UITour.showFirefoxAccounts(null, emailInput.value);
       }
       break;
-    case "onboarding-overlay":
-    case "onboarding-overlay-close-btn":
-      // Dismiss any highlights if a user tries to close the dialog.
-      Mozilla.UITour.hideHighlight();
-      break;
   }
   let classList = evt.target.classList;
   // On keyboard navigation the target would be .onboarding-tour-item.
@@ -72,6 +67,7 @@ let onClick = evt => {
 };
 
 let overlay = document.getElementById("onboarding-overlay");
+overlay.addEventListener("submit", e => e.preventDefault());
 overlay.addEventListener("click", onClick);
 overlay.addEventListener("keypress", e => {
   let { target, key } = e;
@@ -83,6 +79,12 @@ overlay.addEventListener("keypress", e => {
     Mozilla.UITour.hideHighlight(); // Clean up UITour if a user tries to change to other tours.
   }
 });
+let overlayObserver = new MutationObserver(mutations => {
+  if (!overlay.classList.contains("onboarding-opened")) {
+    Mozilla.UITour.hideHighlight(); // Clean up UITour if a user tries to close the dialog.
+  }
+});
+overlayObserver.observe(overlay, { attributes: true });
 document.getElementById("onboarding-overlay-button").addEventListener("Agent:Destroy", () => Mozilla.UITour.hideHighlight());
 document.addEventListener("Agent:CanSetDefaultBrowserInBackground", onCanSetDefaultBrowserInBackground);
 

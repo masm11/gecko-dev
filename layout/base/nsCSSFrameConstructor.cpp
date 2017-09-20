@@ -5882,6 +5882,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
   NS_PRECONDITION(aContent->IsNodeOfType(nsINode::eTEXT) ||
                   aContent->IsElement(),
                   "Shouldn't get anything else here!");
+  MOZ_ASSERT(aContent->IsInComposedDoc());
   MOZ_ASSERT(!aContent->GetPrimaryFrame() || aState.mCreatingExtraFrames ||
              aContent->NodeInfo()->NameAtom() == nsGkAtoms::area);
 
@@ -8614,7 +8615,14 @@ nsCSSFrameConstructor::ContentRemoved(nsIContent* aContainer,
   nsPresContext* presContext = mPresShell->GetPresContext();
   MOZ_ASSERT(presContext, "Our presShell should have a valid presContext");
 
-  if (aChild->IsHTMLElement(nsGkAtoms::body) ||
+  // We want to detect when the viewport override element stored in the
+  // prescontext is in the subtree being removed.  Except in fullscreen cases
+  // (which are handled in Element::UnbindFromTree and do not get stored on the
+  // prescontext), the override element is always either the root element or a
+  // <body> child of the root element.  So we can only be removing the stored
+  // override element if the thing being removed is either the override element
+  // itself or the root element (which can be a parent of the override element).
+  if (aChild == presContext->GetViewportScrollbarStylesOverrideElement() ||
       (!aContainer && aChild->IsElement())) {
     // We might be removing the element that we propagated viewport scrollbar
     // styles from.  Recompute those. (This clause covers two of the three
@@ -8622,8 +8630,24 @@ nsCSSFrameConstructor::ContentRemoved(nsIContent* aContainer,
     // descendant] and the root node. The other possible scrollbar-propagation
     // source is a fullscreen element, and we have code elsewhere to update
     // scrollbars after fullscreen elements are removed -- specifically, it's
-    // part of the fullscreen cleanup code called by Element::UnbindFromTree.)
-    presContext->UpdateViewportScrollbarStylesOverride();
+    // part of the fullscreen cleanup code called by Element::UnbindFromTree.
+    // We don't handle the fullscreen case here, because it doesn't change the
+    // scrollbar styles override element stored on the prescontext.)
+    Element* newOverrideElement =
+      presContext->UpdateViewportScrollbarStylesOverride();
+
+    // Now if newOverrideElement is not the root and isn't aChild (which it
+    // could be if all we're doing here is reframing the current override
+    // element), it needs reframing.  In particular, it used to have a
+    // scrollframe (because its overflow was not "visible"), but now it will
+    // propagate its overflow to the viewport, so it should not need a
+    // scrollframe anymore.
+    if (newOverrideElement && newOverrideElement->GetParent() &&
+        newOverrideElement != aChild) {
+      LAYOUT_PHASE_TEMP_EXIT();
+      RecreateFramesForContent(newOverrideElement, InsertionKind::Async);
+      LAYOUT_PHASE_TEMP_REENTER();
+    }
   }
 
 #ifdef DEBUG

@@ -68,7 +68,7 @@ macro_rules! impl_gecko_keyword_conversions {
     }
 </%def>
 
-<%helpers:longhand name="font-family" animation_value_type="discrete" need_index="True"  boxed="${product == 'gecko'}"
+<%helpers:longhand name="font-family" animation_value_type="discrete" boxed="${product == 'gecko'}"
                    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER"
                    spec="https://drafts.csswg.org/css-fonts/#propdef-font-family">
     use properties::longhands::system_font::SystemFont;
@@ -85,6 +85,7 @@ macro_rules! impl_gecko_keyword_conversions {
         pub use self::FontFamily as SingleComputedValue;
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub enum FontFamily {
             FamilyName(FamilyName),
@@ -92,6 +93,7 @@ macro_rules! impl_gecko_keyword_conversions {
         }
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub struct FamilyName {
             pub name: Atom,
@@ -99,6 +101,7 @@ macro_rules! impl_gecko_keyword_conversions {
         }
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub enum FamilyNameSyntax {
             /// The family name was specified in a quoted form, e.g. "Font Name"
@@ -296,6 +299,7 @@ macro_rules! impl_gecko_keyword_conversions {
         }
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub Vec<FontFamily>);
     }
@@ -313,6 +317,7 @@ macro_rules! impl_gecko_keyword_conversions {
         SpecifiedValue::parse(input)
     }
 
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub enum SpecifiedValue {
         Values(Vec<FontFamily>),
@@ -415,21 +420,22 @@ ${helpers.single_keyword_system("font-style",
                                       "titling-caps": "TITLING" } %>
 
 ${helpers.single_keyword_system("font-variant-caps",
-                               "normal small-caps",
-                               extra_gecko_values="all-small-caps petite-caps all-petite-caps unicase titling-caps",
-                               gecko_constant_prefix="NS_FONT_VARIANT_CAPS",
-                               gecko_ffi_name="mFont.variantCaps",
-                               spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-caps",
-                               custom_consts=font_variant_caps_custom_consts,
-                               flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
-                               animation_value_type="discrete")}
+                                "normal small-caps",
+                                extra_gecko_values="all-small-caps petite-caps all-petite-caps unicase titling-caps",
+                                gecko_constant_prefix="NS_FONT_VARIANT_CAPS",
+                                gecko_ffi_name="mFont.variantCaps",
+                                spec="https://drafts.csswg.org/css-fonts/#propdef-font-variant-caps",
+                                custom_consts=font_variant_caps_custom_consts,
+                                flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER",
+                                animation_value_type="discrete")}
 
-<%helpers:longhand name="font-weight" need_clone="True" animation_value_type="ComputedValue"
+<%helpers:longhand name="font-weight" animation_value_type="ComputedValue"
                    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER"
                    spec="https://drafts.csswg.org/css-fonts/#propdef-font-weight">
     use properties::longhands::system_font::SystemFont;
 
 
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     #[derive(Clone, Copy, Debug, Eq, PartialEq, ToCss)]
     pub enum SpecifiedValue {
@@ -484,6 +490,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         /// However, system fonts may provide other values. Pango
         /// may provide 350, 380, and 1000 (on top of the existing values), for example.
         #[derive(Clone, ComputeSquaredDistance, Copy, Debug, Eq, Hash, PartialEq, ToCss)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf, Deserialize, Serialize))]
         pub struct T(pub u16);
 
@@ -589,7 +596,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 </%helpers:longhand>
 
-<%helpers:longhand name="font-size" need_clone="True" animation_value_type="NonNegativeAu"
+<%helpers:longhand name="font-size" animation_value_type="NonNegativeLength"
                    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER"
                    allow_quirks="True" spec="https://drafts.csswg.org/css-fonts/#propdef-font-size">
     use app_units::Au;
@@ -597,7 +604,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     use std::fmt;
     use style_traits::ToCss;
     use values::FONT_MEDIUM_PX;
-    use values::computed::NonNegativeAu;
+    use values::computed::NonNegativeLength;
     use values::specified::{AllowQuirks, FontRelativeLength, LengthOrPercentage, NoCalcLength};
     use values::specified::length::FontBaseSize;
 
@@ -614,6 +621,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 
     #[derive(Clone, Debug, PartialEq)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Length(specified::LengthOrPercentage),
@@ -627,7 +635,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         /// go into the ratio, and the remaining units all computed together
         /// will go into the offset.
         /// See bug 1355707.
-        Keyword(KeywordSize, f32, NonNegativeAu),
+        Keyword(KeywordSize, f32, NonNegativeLength),
         Smaller,
         Larger,
         System(SystemFont)
@@ -640,12 +648,13 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 
     pub mod computed_value {
-        use values::computed::NonNegativeAu;
-        pub type T = NonNegativeAu;
+        use values::computed::NonNegativeLength;
+        pub type T = NonNegativeLength;
     }
 
     /// CSS font keywords
     #[derive(Clone, Copy, Debug, PartialEq)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum KeywordSize {
         XXSmall = 1, // This is to enable the NonZero optimization
@@ -716,7 +725,7 @@ ${helpers.single_keyword_system("font-variant-caps",
 
     % if product == "servo":
         impl ToComputedValue for KeywordSize {
-            type ComputedValue = NonNegativeAu;
+            type ComputedValue = NonNegativeLength;
             #[inline]
             fn to_computed_value(&self, _: &Context) -> computed_value::T {
                 // https://drafts.csswg.org/css-fonts-3/#font-size-prop
@@ -740,7 +749,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         }
     % else:
         impl ToComputedValue for KeywordSize {
-            type ComputedValue = NonNegativeAu;
+            type ComputedValue = NonNegativeLength;
             #[inline]
             fn to_computed_value(&self, cx: &Context) -> computed_value::T {
                 use gecko_bindings::structs::nsIAtom;
@@ -776,7 +785,7 @@ ${helpers.single_keyword_system("font-variant-caps",
                 let base_size_px = au_to_int_px(base_size as f32);
                 let html_size = self.html_size() as usize;
                 if base_size_px >= 9 && base_size_px <= 16 {
-                    NonNegativeAu::from_px(FONT_SIZE_MAPPING[(base_size_px - 9) as usize][html_size])
+                    NonNegativeLength::new(FONT_SIZE_MAPPING[(base_size_px - 9) as usize][html_size] as f32)
                 } else {
                     Au(FONT_SIZE_FACTORS[html_size] * base_size / 100).into()
                 }
@@ -811,17 +820,17 @@ ${helpers.single_keyword_system("font-variant-caps",
 
         /// If this value is specified as a ratio of the parent font (em units
         /// or percent) return the ratio
-        pub fn as_font_ratio(&self, context: &Context) -> Option<(f32, NonNegativeAu)> {
+        pub fn as_font_ratio(&self, context: &Context) -> Option<(f32, NonNegativeLength)> {
             match *self {
                 SpecifiedValue::Length(ref lop) => {
                     match *lop {
                         LengthOrPercentage::Percentage(pc) => {
-                            Some((pc.0, Au(0).into()))
+                            Some((pc.0, NonNegativeLength::zero()))
                         }
                         LengthOrPercentage::Length(ref nocalc) => {
                             match *nocalc {
                                 NoCalcLength::FontRelative(FontRelativeLength::Em(em)) => {
-                                    Some((em, Au(0).into()))
+                                    Some((em, NonNegativeLength::zero()))
                                 }
                                 _ => None,
                             }
@@ -837,7 +846,7 @@ ${helpers.single_keyword_system("font-variant-caps",
                             // to do here -- Gecko recascades as if the font had changed, we instead track the changes
                             // and reapply, which means that we carry over old computed ex/ch values whilst Gecko
                             // recomputes new ones. This is enough of an edge case to not really matter.
-                            let abs = calc.to_computed_value_zoomed(context, FontBaseSize::Custom(Au(0).into()))
+                            let abs = calc.to_computed_value_zoomed(context, FontBaseSize::Custom(Au(0)))
                                           .length_component().into();
                             Some((ratio, abs))
                         }
@@ -854,7 +863,7 @@ ${helpers.single_keyword_system("font-variant-caps",
             &self,
             context: &Context,
             base_size: FontBaseSize,
-        ) -> NonNegativeAu {
+        ) -> NonNegativeLength {
             use values::specified::length::FontRelativeLength;
             match *self {
                 SpecifiedValue::Length(LengthOrPercentage::Length(
@@ -867,7 +876,7 @@ ${helpers.single_keyword_system("font-variant-caps",
                 }
                 SpecifiedValue::Length(LengthOrPercentage::Length(
                         NoCalcLength::Absolute(ref l))) => {
-                    context.maybe_zoom_text(l.to_computed_value(context).into())
+                    context.maybe_zoom_text(l.to_computed_value(context)).into()
                 }
                 SpecifiedValue::Length(LengthOrPercentage::Length(ref l)) => {
                     l.to_computed_value(context).into()
@@ -880,7 +889,8 @@ ${helpers.single_keyword_system("font-variant-caps",
                     calc.to_used_value(Some(base_size.resolve(context))).unwrap().into()
                 }
                 SpecifiedValue::Keyword(ref key, fraction, offset) => {
-                    context.maybe_zoom_text(key.to_computed_value(context).scale_by(fraction) + offset)
+                    let key_len = key.to_computed_value(context).scale_by(fraction) + offset;
+                    context.maybe_zoom_text(key_len.0).into()
                 }
                 SpecifiedValue::Smaller => {
                     FontRelativeLength::Em(1. / LARGER_FONT_SIZE_RATIO)
@@ -903,7 +913,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     #[inline]
     #[allow(missing_docs)]
     pub fn get_initial_value() -> computed_value::T {
-        NonNegativeAu::from_px(FONT_MEDIUM_PX)
+        NonNegativeLength::new(FONT_MEDIUM_PX as f32)
     }
 
     #[inline]
@@ -970,7 +980,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     #[allow(unused_mut)]
     pub fn cascade_specified_font_size(context: &mut Context,
                                        specified_value: &SpecifiedValue,
-                                       mut computed: NonNegativeAu) {
+                                       mut computed: NonNegativeLength) {
         if let SpecifiedValue::Keyword(kw, fraction, offset) = *specified_value {
             context.builder.font_size_keyword = Some((kw, fraction, offset));
         } else if let Some((ratio, abs)) = specified_value.as_font_ratio(context) {
@@ -982,7 +992,7 @@ ${helpers.single_keyword_system("font-variant-caps",
             // See bug 1355707
             if let Some((kw, fraction, old_abs)) = *context.builder.inherited_font_computation_data() {
                 context.builder.font_size_keyword =
-                    Some((kw, fraction * ratio, abs + old_abs.0.scale_by(ratio).into()));
+                    Some((kw, fraction * ratio, abs + old_abs.scale_by(ratio)));
             } else {
                 context.builder.font_size_keyword = None;
             }
@@ -1001,7 +1011,8 @@ ${helpers.single_keyword_system("font-variant-caps",
                context.builder.get_font().gecko().mGenericID !=
                context.builder.get_parent_font().gecko().mGenericID {
                 if let Some((kw, ratio, offset)) = context.builder.font_size_keyword {
-                    computed = context.maybe_zoom_text(kw.to_computed_value(context).scale_by(ratio) + offset);
+                    let len = kw.to_computed_value(context).scale_by(ratio) + offset;
+                    computed = context.maybe_zoom_text(len.0).into();
                 }
             }
         % endif
@@ -1017,7 +1028,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         if let Some(parent) = parent_unconstrained {
             let new_unconstrained =
                 specified_value
-                    .to_computed_value_against(context, FontBaseSize::Custom(parent.0));
+                    .to_computed_value_against(context, FontBaseSize::Custom(Au::from(parent)));
             context.builder
                    .mutate_font()
                    .apply_unconstrained_font_size(new_unconstrained);
@@ -1031,7 +1042,8 @@ ${helpers.single_keyword_system("font-variant-caps",
         // changes using the font_size_keyword. We also need to do this to
         // handle mathml scriptlevel changes
         let kw_inherited_size = context.builder.font_size_keyword.map(|(kw, ratio, offset)| {
-            context.maybe_zoom_text(SpecifiedValue::Keyword(kw, ratio, offset).to_computed_value(context))
+            let len = SpecifiedValue::Keyword(kw, ratio, offset).to_computed_value(context);
+            context.maybe_zoom_text(len.0).into()
         });
         let parent_kw;
         let device = context.builder.device;
@@ -1058,8 +1070,8 @@ ${helpers.single_keyword_system("font-variant-caps",
         // compute to the same value and depends on the font
         let computed = context.maybe_zoom_text(
                             longhands::font_size::get_initial_specified_value()
-                                .to_computed_value(context)
-                        );
+                                .to_computed_value(context).0
+                        ).into();
         context.builder.mutate_font().set_font_size(computed);
         % if product == "gecko":
             let device = context.builder.device;
@@ -1077,6 +1089,7 @@ ${helpers.single_keyword_system("font-variant-caps",
 
 
     #[derive(Clone, Copy, Debug, PartialEq, ToCss)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         None,
@@ -1124,6 +1137,7 @@ ${helpers.single_keyword_system("font-variant-caps",
         use values::CSSFloat;
         use values::animated::{ToAnimatedValue, ToAnimatedZero};
 
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         #[derive(Animate, Clone, ComputeSquaredDistance, Copy, Debug, PartialEq, ToCss)]
         pub enum T {
@@ -1199,6 +1213,7 @@ ${helpers.single_keyword_system("font-variant-caps",
     }
 
     #[derive(Clone, Debug, PartialEq, ToComputedValue)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub struct SpecifiedValue {
         pub weight: bool,
@@ -1306,6 +1321,7 @@ ${helpers.single_keyword_system("font-kerning",
 
 
     #[derive(Clone, Debug, PartialEq)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum VariantAlternates {
         Stylistic(CustomIdent),
@@ -1318,10 +1334,12 @@ ${helpers.single_keyword_system("font-kerning",
     }
 
     #[derive(Clone, Debug, PartialEq)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub struct VariantAlternatesList(pub Box<[VariantAlternates]>);
 
     #[derive(Clone, Debug, PartialEq, ToCss)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Value(VariantAlternatesList),
@@ -1515,6 +1533,7 @@ macro_rules! exclusive_value {
 
 
     bitflags! {
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub flags VariantEastAsian: u16 {
             const NORMAL = 0,
@@ -1530,7 +1549,7 @@ macro_rules! exclusive_value {
         }
     }
 
-
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantEastAsian),
@@ -1660,6 +1679,7 @@ macro_rules! exclusive_value {
 
 
     bitflags! {
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub flags VariantLigatures: u16 {
             const NORMAL = 0,
@@ -1675,7 +1695,7 @@ macro_rules! exclusive_value {
         }
     }
 
-
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantLigatures),
@@ -1819,6 +1839,7 @@ macro_rules! exclusive_value {
 
 
     bitflags! {
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub flags VariantNumeric: u8 {
             const NORMAL = 0,
@@ -1833,8 +1854,7 @@ macro_rules! exclusive_value {
         }
     }
 
-
-
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(VariantNumeric),
@@ -1974,6 +1994,7 @@ ${helpers.single_keyword_system("font-variant-position",
     use properties::longhands::system_font::SystemFont;
     use values::generics::FontSettings;
 
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, PartialEq, ToCss)]
     pub enum SpecifiedValue {
         Value(computed_value::T),
@@ -2014,14 +2035,9 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
                    animation_value_type="ComputedValue"
                    flags="APPLIES_TO_FIRST_LETTER APPLIES_TO_FIRST_LINE APPLIES_TO_PLACEHOLDER"
                    spec="${variation_spec}">
-    use values::computed::ComputedValueAsSpecified;
     use values::generics::FontSettings;
 
-    impl ComputedValueAsSpecified for SpecifiedValue {}
-
     pub type SpecifiedValue = computed_value::T;
-
-
 
     pub mod computed_value {
         use values::generics::{FontSettings, FontSettingTagFloat};
@@ -2050,6 +2066,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
     use byteorder::{BigEndian, ByteOrder};
 
     #[derive(Clone, Debug, Eq, PartialEq)]
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
     pub enum SpecifiedValue {
         Normal,
@@ -2107,6 +2124,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         // it and store it as a 32-bit integer
         // (see http://www.microsoft.com/typography/otspec/languagetags.htm).
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub u32);
     }
@@ -2215,6 +2233,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         }
 
         #[derive(Clone, Debug, PartialEq, ToComputedValue)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         pub struct T(pub Atom);
     }
@@ -2257,7 +2276,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
 <%helpers:longhand name="-moz-script-level" products="gecko" animation_value_type="none"
                    predefined_type="Integer" gecko_ffi_name="mScriptLevel"
                    spec="Internal (not web-exposed)"
-                   internal="True" need_clone="True">
+                   internal="True">
     use std::fmt;
     use style_traits::ToCss;
 
@@ -2271,6 +2290,7 @@ https://drafts.csswg.org/css-fonts-4/#low-level-font-variation-settings-control-
         0
     }
 
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum SpecifiedValue {
         Relative(i32),
@@ -2336,8 +2356,7 @@ ${helpers.single_keyword("-moz-math-display",
                          gecko_ffi_name="mMathDisplay",
                          products="gecko",
                          spec="Internal (not web-exposed)",
-                         animation_value_type="none",
-                         need_clone="True")}
+                         animation_value_type="none")}
 
 ${helpers.single_keyword("-moz-math-variant",
                          """none normal bold italic bold-italic script bold-script
@@ -2349,28 +2368,28 @@ ${helpers.single_keyword("-moz-math-variant",
                          products="gecko",
                          spec="Internal (not web-exposed)",
                          animation_value_type="none",
-                         need_clone="True",
                          needs_conversion=True)}
 
 <%helpers:longhand name="-moz-script-min-size" products="gecko" animation_value_type="none"
                    predefined_type="Length" gecko_ffi_name="mScriptMinSize"
                    spec="Internal (not web-exposed)"
                    internal="True">
-    use app_units::Au;
     use gecko_bindings::structs::NS_MATHML_DEFAULT_SCRIPT_MIN_SIZE_PT;
-    use values::specified::length::{AU_PER_PT, FontBaseSize, NoCalcLength};
+    use values::computed::Length;
+    use values::specified::length::{AU_PER_PT, AU_PER_PX, FontBaseSize, NoCalcLength};
 
+    #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
     #[derive(Clone, Debug, PartialEq, ToCss)]
     pub struct SpecifiedValue(pub NoCalcLength);
 
     pub mod computed_value {
-        pub type T = super::Au;
+        pub type T = ::values::computed::Length;
     }
 
     impl ToComputedValue for SpecifiedValue {
         type ComputedValue = computed_value::T;
 
-        fn to_computed_value(&self, cx: &Context) -> Au {
+        fn to_computed_value(&self, cx: &Context) -> Length {
             // this value is used in the computation of font-size, so
             // we use the parent size
             let base_size = FontBaseSize::InheritedStyle;
@@ -2393,7 +2412,7 @@ ${helpers.single_keyword("-moz-math-variant",
 
     #[inline]
     pub fn get_initial_value() -> computed_value::T {
-        Au((NS_MATHML_DEFAULT_SCRIPT_MIN_SIZE_PT as f32 * AU_PER_PT) as i32)
+        Length::new(NS_MATHML_DEFAULT_SCRIPT_MIN_SIZE_PT as f32 * (AU_PER_PT / AU_PER_PX))
     }
 
     pub fn parse<'i, 't>(_context: &ParserContext, _input: &mut Parser<'i, 't>)
@@ -2418,6 +2437,7 @@ ${helpers.single_keyword("-moz-math-variant",
         }
 
         #[derive(Clone, Debug, PartialEq, ToComputedValue)]
+        #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
         #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
         /// text-zoom. Enable if true, disable if false
         pub struct T(pub bool);
@@ -2472,7 +2492,7 @@ ${helpers.single_keyword("-moz-math-variant",
             kw_cast = """font_style font_variant_caps font_stretch
                          font_kerning font_variant_position""".split()
         %>
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ToCss)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq, ToCss)]
         pub enum SystemFont {
             % for font in system_fonts:
                 ${to_camel_case(font)},

@@ -85,7 +85,6 @@ class nsIMessageBroadcaster;
 class nsNameSpaceManager;
 class nsIObserver;
 class nsIParser;
-class nsIParserService;
 class nsIPluginTag;
 class nsIPresShell;
 class nsIPrincipal;
@@ -611,8 +610,6 @@ public:
   // Check if a node is in the document prolog, i.e. before the document
   // element.
   static bool InProlog(nsINode *aNode);
-
-  static nsIParserService* GetParserService();
 
   static nsNameSpaceManager* NameSpaceManager()
   {
@@ -3085,6 +3082,13 @@ public:
   static bool
   IsLocalRefURL(const nsString& aString);
 
+  /**
+   * Detect whether a string is a local-url.
+   * https://drafts.csswg.org/css-values/#local-urls
+   */
+  static bool
+  IsLocalRefURL(const nsACString& aString);
+
   static bool
   IsCustomElementsEnabled() { return sIsCustomElementsEnabled; }
 
@@ -3246,8 +3250,6 @@ private:
   static nsIScriptSecurityManager *sSecurityManager;
   static nsIPrincipal *sSystemPrincipal;
   static nsIPrincipal *sNullSubjectPrincipal;
-
-  static nsIParserService *sParserService;
 
   static nsNameSpaceManager *sNameSpaceManager;
 

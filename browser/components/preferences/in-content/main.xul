@@ -348,6 +348,13 @@
           hidden="true">
   <caption><label>&homepage2.label;</label></caption>
 
+  <hbox id="browserHomePageExtensionContent" align="center">
+    <description control="disableHomePageExtension" flex="1" />
+    <button id="disableHomePageExtension"
+            class="extension-controlled-button accessory-button"
+            label="&disableExtension.label;" />
+  </hbox>
+
   <vbox>
     <textbox id="browserHomePage"
              class="uri-element"
@@ -417,27 +424,35 @@
               preference="browser.taskbar.previews.enable"/>
 #endif
 
-    <hbox id="browserContainersbox" hidden="true" align="center">
-      <checkbox id="browserContainersCheckbox"
-                label="&browserContainersEnabled.label;"
-                accesskey="&browserContainersEnabled.accesskey;"
-                preference="privacy.userContext.enabled"
-                onsyncfrompreference="return gPrivacyPane.readBrowserContainersCheckbox();"/>
-      <label id="browserContainersLearnMore" class="learnMore text-link">
-        &browserContainersLearnMore.label;
-      </label>
-      <spacer flex="1"/>
-      <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-      <hbox>
-        <button id="browserContainersSettings"
-                class="accessory-button"
-                label="&browserContainersSettings.label;"
-                accesskey="&browserContainersSettings.accesskey;"
-                searchkeywords="&addButton.label;
-                                &preferencesButton.label;
-                                &removeButton.label;"/>
+    <vbox id="browserContainersbox" hidden="true">
+      <hbox id="browserContainersExtensionContent" align="center">
+        <description control="disableContainersExtension" flex="1" />
+        <button id="disableContainersExtension"
+                class="extension-controlled-button accessory-button"
+                label="&disableExtension.label;" />
       </hbox>
-    </hbox>
+      <hbox align="center">
+        <checkbox id="browserContainersCheckbox"
+                  label="&browserContainersEnabled.label;"
+                  accesskey="&browserContainersEnabled.accesskey;"
+                  preference="privacy.userContext.enabled"
+                  onsyncfrompreference="return gMainPane.readBrowserContainersCheckbox();"/>
+        <label id="browserContainersLearnMore" class="learnMore text-link">
+          &browserContainersLearnMore.label;
+        </label>
+        <spacer flex="1"/>
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox>
+          <button id="browserContainersSettings"
+                  class="accessory-button"
+                  label="&browserContainersSettings.label;"
+                  accesskey="&browserContainersSettings.accesskey;"
+                  searchkeywords="&addButton.label;
+                                  &preferencesButton.label;
+                                  &removeButton.label;"/>
+        </hbox>
+      </hbox>
+    </vbox>
 </groupbox>
 
 <hbox id="languageAndAppearanceCategory"
@@ -572,7 +587,7 @@
                 icon="select-color"
                 label="&colors.label;"
                 accesskey="&colors.accesskey;"
-                searchkeywords="&overrideDefaultPageColors.label;
+                searchkeywords="&overrideDefaultPageColors2.label;
                                 &overrideDefaultPageColors.always.label;
                                 &overrideDefaultPageColors.auto.label;
                                 &overrideDefaultPageColors.never.label;
@@ -581,6 +596,7 @@
                                 &backgroundColor2.label;
                                 &useSystemColors.label;
                                 &underlineLinks.label;
+                                &links;
                                 &linkColor2.label;
                                 &visitedLinkColor2.label;"/>
       </hbox>

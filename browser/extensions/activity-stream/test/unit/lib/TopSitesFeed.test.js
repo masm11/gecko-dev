@@ -3,7 +3,7 @@ const injector = require("inject!lib/TopSitesFeed.jsm");
 const {UPDATE_TIME} = require("lib/TopSitesFeed.jsm");
 const {FakePrefs, GlobalOverrider} = require("test/unit/utils");
 const action = {meta: {fromTarget: {}}};
-const {actionCreators: ac, actionTypes: at} = require("common/Actions.jsm");
+const {actionTypes: at} = require("common/Actions.jsm");
 const {insertPinned, TOP_SITES_SHOWMORE_LENGTH} = require("common/Reducers.jsm");
 
 const FAKE_FRECENCY = 200;
@@ -29,6 +29,7 @@ describe("Top Sites Feed", () => {
   let clock;
   let fakeNewTabUtils;
   let fakeScreenshot;
+  let filterAdultStub;
   let shortURLStub;
 
   beforeEach(() => {
@@ -48,6 +49,7 @@ describe("Top Sites Feed", () => {
       }
     };
     fakeScreenshot = {getScreenshotForURL: sandbox.spy(() => Promise.resolve(FAKE_SCREENSHOT))};
+    filterAdultStub = sinon.stub().returns([]);
     shortURLStub = sinon.stub().callsFake(site => site.url);
     const fakeDedupe = function() {};
     globals.set("NewTabUtils", fakeNewTabUtils);
@@ -56,12 +58,20 @@ describe("Top Sites Feed", () => {
       "lib/ActivityStreamPrefs.jsm": {Prefs: FakePrefs},
       "common/Dedupe.jsm": {Dedupe: fakeDedupe},
       "common/Reducers.jsm": {insertPinned, TOP_SITES_SHOWMORE_LENGTH},
+      "lib/FilterAdult.jsm": {filterAdult: filterAdultStub},
       "lib/Screenshots.jsm": {Screenshots: fakeScreenshot},
       "lib/TippyTopProvider.jsm": {TippyTopProvider: FakeTippyTopProvider},
       "lib/ShortURL.jsm": {shortURL: shortURLStub}
     }));
     feed = new TopSitesFeed();
-    feed.store = {dispatch: sinon.spy(), getState() { return {TopSites: {rows: Array(12).fill("site")}}; }};
+    feed.store = {
+      dispatch: sinon.spy(),
+      getState() { return this.state; },
+      state: {
+        Prefs: {values: {filterAdult: false, topSitesCount: 6}},
+        TopSites: {rows: Array(12).fill("site")}
+      }
+    };
     feed.dedupe.group = (...sites) => sites;
     links = FAKE_LINKS;
     clock = sinon.useFakeTimers();
@@ -130,6 +140,22 @@ describe("Top Sites Feed", () => {
       assert.notEqual(result[1].url, links[1].url);
       assert.notEqual(result[1].url, links[2].url);
     });
+    it("should not filter out adult sites when pref is false", async() => {
+      await feed.getLinksWithDefaults();
+
+      assert.notCalled(filterAdultStub);
+    });
+    it("should filter out non-pinned adult sites when pref is true", async() => {
+      feed.store.state.Prefs.values.filterAdult = true;
+      fakeNewTabUtils.pinnedLinks.links = [{url: "https://foo.com/"}];
+
+      const result = await feed.getLinksWithDefaults();
+
+      // The stub filters out everything
+      assert.calledOnce(filterAdultStub);
+      assert.equal(result.length, 1);
+      assert.equal(result[0].url, fakeNewTabUtils.pinnedLinks.links[0].url);
+    });
     it("should filter out the defaults that have been blocked", async () => {
       // make sure we only have one top site, and we block the only default site we have to show
       const url = "www.myonlytopsite.com";
@@ -186,6 +212,13 @@ describe("Top Sites Feed", () => {
         feed.getLinksWithDefaults(action);
       });
     });
+    it("should get more if the user has asked for more", async () => {
+      feed.store.state.Prefs.values.topSitesCount = TOP_SITES_SHOWMORE_LENGTH + 1;
+
+      const result = await feed.getLinksWithDefaults();
+
+      assert.propertyVal(result, "length", feed.store.state.Prefs.values.topSitesCount);
+    });
     describe("deduping", () => {
       beforeEach(() => {
         ({TopSitesFeed, DEFAULT_TOP_SITES} = injector({
@@ -194,7 +227,7 @@ describe("Top Sites Feed", () => {
           "lib/Screenshots.jsm": {Screenshots: fakeScreenshot}
         }));
         sandbox.stub(global.Services.eTLD, "getPublicSuffix").returns("com");
-        feed = new TopSitesFeed();
+        feed = Object.assign(new TopSitesFeed(), {store: feed.store});
       });
       it("should not dedupe pinned sites", async () => {
         fakeNewTabUtils.pinnedLinks.links = [
@@ -261,20 +294,16 @@ describe("Top Sites Feed", () => {
       assert.propertyVal(feed.store.dispatch.firstCall.args[0], "type", at.TOP_SITES_UPDATED);
       assert.deepEqual(feed.store.dispatch.firstCall.args[0].data, reference);
     });
-    it("should reuse screenshots for existing links, and call feed.getScreenshot for others", async () => {
-      sandbox.stub(feed, "getScreenshot");
-      const rows = [{url: FAKE_LINKS[0].url, screenshot: "foo.jpg"}];
-      feed.store.getState = () => ({TopSites: {rows}});
+    it("should call _fetchIcon for each link and pass in existing screenshots", async () => {
+      feed.store.state.TopSites.rows = [{url: FAKE_LINKS[0].url, screenshot: "foo.jpg"}];
+      const expectedScreenshotCache = {};
+      expectedScreenshotCache[FAKE_LINKS[0].url] = "foo.jpg";
+      sinon.spy(feed, "_fetchIcon");
       await feed.refresh(action);
-
       const results = feed.store.dispatch.firstCall.args[0].data;
-
+      assert.callCount(feed._fetchIcon, results.length);
       results.forEach(link => {
-        if (link.url === FAKE_LINKS[0].url) {
-          assert.equal(link.screenshot, "foo.jpg");
-        } else {
-          assert.calledWith(feed.getScreenshot, link.url);
-        }
+        assert.calledWith(feed._fetchIcon, link, expectedScreenshotCache);
       });
     });
     it("should handle empty slots in the resulting top sites array", async () => {
@@ -284,31 +313,49 @@ describe("Top Sites Feed", () => {
       await feed.refresh(action);
       assert.calledOnce(feed.store.dispatch);
     });
-    it("should skip getting screenshot if there is a tippy top icon", async () => {
+  });
+  describe("#_fetchIcon", () => {
+    it("should reuse screenshots for existing links, and call feed.getScreenshot for others", () => {
+      sandbox.stub(feed, "getScreenshot");
+      const screenshotCache = {};
+      screenshotCache[FAKE_LINKS[0].url] = "foo.jpg";
+      screenshotCache[FAKE_LINKS[1].url] = "bar.png";
+
+      feed._fetchIcon(FAKE_LINKS[0], screenshotCache);
+      assert.notCalled(feed.getScreenshot);
+      assert.propertyVal(FAKE_LINKS[0], "screenshot", "foo.jpg");
+
+      feed._fetchIcon(FAKE_LINKS[1], screenshotCache);
+      assert.notCalled(feed.getScreenshot);
+      assert.propertyVal(FAKE_LINKS[1], "screenshot", "bar.png");
+
+      feed._fetchIcon(FAKE_LINKS[2], screenshotCache);
+      assert.calledOnce(feed.getScreenshot);
+      assert.calledWith(feed.getScreenshot, FAKE_LINKS[2].url);
+    });
+    it("should skip getting a screenshot if there is a tippy top icon", () => {
       sandbox.stub(feed, "getScreenshot");
       feed._tippyTopProvider.processSite = site => {
         site.tippyTopIcon = "icon.png";
         site.backgroundColor = "#fff";
         return site;
       };
-      await feed.refresh(action);
-      assert.calledOnce(feed.store.dispatch);
+      const link = {url: "example.com"};
+      feed._fetchIcon(link);
+      assert.propertyVal(link, "tippyTopIcon", "icon.png");
+      assert.notProperty(link, "screenshot");
       assert.notCalled(feed.getScreenshot);
     });
-    it("should skip getting screenshot if there is an icon of size greater than 96x96 and no tippy top", async () => {
+    it("should skip getting a screenshot if there is an icon of size greater than 96x96 and no tippy top", () => {
       sandbox.stub(feed, "getScreenshot");
-      feed.getLinksWithDefaults = () => [{
+      const link = {
         url: "foo.com",
         favicon: "data:foo",
         faviconSize: 196
-      }];
-      feed._tippyTopProvider.processSite = site => {
-        site.tippyTopIcon = null;
-        site.backgroundColor = null;
-        return site;
       };
-      await feed.refresh(action);
-      assert.calledOnce(feed.store.dispatch);
+      feed._fetchIcon(link);
+      assert.notProperty(link, "tippyTopIcon");
+      assert.notProperty(link, "screenshot");
       assert.notCalled(feed.getScreenshot);
     });
   });
@@ -350,40 +397,32 @@ describe("Top Sites Feed", () => {
       assert.calledOnce(fakeNewTabUtils.pinnedLinks.pin);
       assert.calledWith(fakeNewTabUtils.pinnedLinks.pin, pinAction.data.site, pinAction.data.index);
     });
-    it("should get correct isDefault and index property", () => {
-      // When calling _getPinnedWithData the state in `pinnedLinks` and in the store should merge.
-      const site = {url: "foo.com"};
-      const siteWithIndex = {url: "foo.com", isDefault: true, index: 7};
-      fakeNewTabUtils.pinnedLinks.links = [siteWithIndex];
-      feed.store = {dispatch: sinon.spy(), getState() { return {TopSites: {rows: [site]}}; }};
-      const pinAction = {
-        type: at.TOP_SITES_PIN,
-        data: {}
-      };
-      feed.onAction(pinAction);
-      assert.calledOnce(feed.store.dispatch);
-      assert.calledWith(feed.store.dispatch, ac.BroadcastToContent({
-        type: at.PINNED_SITES_UPDATED,
-        data: [siteWithIndex]
-      }));
+    it("should compare against links if available, instead of getting from store", () => {
+      const frecentSite = {url: "foo.com", faviconSize: 32, favicon: "favicon.png"};
+      const pinnedSite1 = {url: "bar.com"};
+      const pinnedSite2 = {url: "foo.com"};
+      fakeNewTabUtils.pinnedLinks.links = [pinnedSite1, pinnedSite2];
+      feed.store = {getState() { return {TopSites: {rows: sinon.spy()}}; }};
+      let result = feed._getPinnedWithData([frecentSite]);
+      assert.include(result[0], pinnedSite1);
+      assert.include(result[1], Object.assign({}, frecentSite, pinnedSite2));
+      assert.notCalled(feed.store.getState().TopSites.rows);
     });
-    it("should get correct pinned links and data", () => {
-      // When calling _getPinnedWithData the state in `pinnedLinks` and in the store should merge.
-      // In this case `site1` is a pinned site and should be returned.
-      const site1 = {url: "foo.com", isDefault: true};
-      const site2 = {url: "bar.com", isDefault: false};
-      fakeNewTabUtils.pinnedLinks.links = [site1];
-      feed.store = {dispatch: sinon.spy(), getState() { return {TopSites: {rows: [site2]}}; }};
-      const pinAction = {
-        type: at.TOP_SITES_PIN,
-        data: {}
-      };
-      feed.onAction(pinAction);
-      assert.calledOnce(feed.store.dispatch);
-      assert.calledWith(feed.store.dispatch, ac.BroadcastToContent({
-        type: at.PINNED_SITES_UPDATED,
-        data: [Object.assign({}, site1, {hostname: "foo.com"})]
-      }));
+    it("should trigger refresh on TOP_SITES_PIN", () => {
+      sinon.stub(feed, "refresh");
+      const pinExistingAction = {type: at.TOP_SITES_PIN, data: {site: FAKE_LINKS[4], index: 4}};
+
+      feed.onAction(pinExistingAction);
+
+      assert.calledOnce(feed.refresh);
+    });
+    it("should trigger refresh on TOP_SITES_ADD", () => {
+      sinon.stub(feed, "refresh");
+      const addAction = {type: at.TOP_SITES_ADD, data: {site: {url: "foo.com"}}};
+
+      feed.onAction(addAction);
+
+      assert.calledOnce(feed.refresh);
     });
     it("should call unpin with correct parameters on TOP_SITES_UNPIN", () => {
       fakeNewTabUtils.pinnedLinks.links = [null, null, {url: "foo.com"}, null, null, null, null, null, FAKE_LINKS[0]];

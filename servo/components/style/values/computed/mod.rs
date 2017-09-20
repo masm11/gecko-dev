@@ -11,10 +11,12 @@ use font_metrics::FontMetricsProvider;
 use media_queries::Device;
 #[cfg(feature = "gecko")]
 use properties;
-use properties::{ComputedValues, StyleBuilder};
+use properties::{ComputedValues, LonghandId, StyleBuilder};
+use rule_cache::RuleCacheConditions;
 #[cfg(feature = "servo")]
 use servo_url::ServoUrl;
-use std::{f32, fmt, ops};
+use std::{f32, fmt};
+use std::cell::RefCell;
 #[cfg(feature = "servo")]
 use std::sync::Arc;
 use style_traits::ToCss;
@@ -33,7 +35,7 @@ pub use self::align::{AlignItems, AlignJustifyContent, AlignJustifySelf, Justify
 pub use self::angle::Angle;
 pub use self::background::BackgroundSize;
 pub use self::border::{BorderImageSlice, BorderImageWidth, BorderImageSideWidth};
-pub use self::border::{BorderRadius, BorderCornerRadius};
+pub use self::border::{BorderRadius, BorderCornerRadius, BorderSpacing};
 pub use self::box_::VerticalAlign;
 pub use self::color::{Color, ColorPropertyValue, RGBAColor};
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
@@ -46,7 +48,7 @@ pub use super::{Auto, Either, None_};
 pub use super::specified::BorderStyle;
 pub use self::length::{CalcLengthOrPercentage, Length, LengthOrNone, LengthOrNumber, LengthOrPercentage};
 pub use self::length::{LengthOrPercentageOrAuto, LengthOrPercentageOrNone, MaxLength, MozLength};
-pub use self::length::NonNegativeLengthOrPercentage;
+pub use self::length::{CSSPixelLength, NonNegativeLength, NonNegativeLengthOrPercentage};
 pub use self::percentage::Percentage;
 pub use self::position::Position;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind, SVGStrokeDashArray, SVGWidth};
@@ -116,6 +118,17 @@ pub struct Context<'a> {
     /// This is used to allow certain properties to generate out-of-range
     /// values, which SMIL allows.
     pub for_smil_animation: bool,
+
+    /// The property we are computing a value for, if it is a non-inherited
+    /// property.  None if we are computed a value for an inherited property
+    /// or not computing for a property at all (e.g. in a media query
+    /// evaluation).
+    pub for_non_inherited_property: Option<LonghandId>,
+
+    /// The conditions to cache a rule node on the rule cache.
+    ///
+    /// FIXME(emilio): Drop the refcell.
+    pub rule_cache_conditions: RefCell<&'a mut RuleCacheConditions>,
 }
 
 impl<'a> Context<'a> {
@@ -146,12 +159,12 @@ impl<'a> Context<'a> {
 
     /// Apply text-zoom if enabled.
     #[cfg(feature = "gecko")]
-    pub fn maybe_zoom_text(&self, size: NonNegativeAu) -> NonNegativeAu {
+    pub fn maybe_zoom_text(&self, size: CSSPixelLength) -> CSSPixelLength {
         // We disable zoom for <svg:text> by unsetting the
         // -x-text-zoom property, which leads to a false value
         // in mAllowZoom
         if self.style().get_font().gecko.mAllowZoom {
-            self.device().zoom_text(size.0).into()
+            self.device().zoom_text(Au::from(size)).into()
         } else {
             size
         }
@@ -159,7 +172,7 @@ impl<'a> Context<'a> {
 
     /// (Servo doesn't do text-zoom)
     #[cfg(feature = "servo")]
-    pub fn maybe_zoom_text(&self, size: NonNegativeAu) -> NonNegativeAu {
+    pub fn maybe_zoom_text(&self, size: CSSPixelLength) -> CSSPixelLength {
         size
     }
 }
@@ -197,6 +210,10 @@ impl<'a, 'cx, 'cx_a: 'cx, S: ToComputedValue + 'a> Iterator for ComputedVecIter<
         } else {
             None
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.values.len(), Some(self.values.len()))
     }
 }
 
@@ -296,6 +313,22 @@ impl<T> ToComputedValue for Vec<T>
     }
 }
 
+impl<T> ToComputedValue for Box<T>
+    where T: ToComputedValue
+{
+    type ComputedValue = Box<<T as ToComputedValue>::ComputedValue>;
+
+    #[inline]
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        Box::new(T::to_computed_value(self, context))
+    }
+
+    #[inline]
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        Box::new(T::from_computed_value(computed))
+    }
+}
+
 impl<T> ToComputedValue for Box<[T]>
     where T: ToComputedValue
 {
@@ -312,32 +345,13 @@ impl<T> ToComputedValue for Box<[T]>
     }
 }
 
-/// A marker trait to represent that the specified value is also the computed
-/// value.
-pub trait ComputedValueAsSpecified {}
-
-impl<T> ToComputedValue for T
-    where T: ComputedValueAsSpecified + Clone,
-{
-    type ComputedValue = T;
-
-    #[inline]
-    fn to_computed_value(&self, _context: &Context) -> T {
-        self.clone()
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &T) -> Self {
-        computed.clone()
-    }
-}
-
 trivial_to_computed_value!(());
 trivial_to_computed_value!(bool);
 trivial_to_computed_value!(f32);
 trivial_to_computed_value!(i32);
 trivial_to_computed_value!(u8);
 trivial_to_computed_value!(u16);
+trivial_to_computed_value!(u32);
 trivial_to_computed_value!(Atom);
 trivial_to_computed_value!(BorderStyle);
 trivial_to_computed_value!(Cursor);
@@ -382,6 +396,7 @@ impl From<GreaterThanOrEqualToOneNumber> for CSSFloat {
 }
 
 #[allow(missing_docs)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[derive(Clone, ComputeSquaredDistance, Copy, Debug, PartialEq, ToCss)]
 pub enum NumberOrPercentage {
@@ -453,13 +468,13 @@ pub type NonNegativeLengthOrPercentageOrNumber = Either<NonNegativeNumber, NonNe
 
 #[allow(missing_docs)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-#[derive(Clone, ComputeSquaredDistance, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, ComputeSquaredDistance, Copy, Debug, PartialEq)]
 /// A computed cliprect for clip and image-region
 pub struct ClipRect {
-    pub top: Option<Au>,
-    pub right: Option<Au>,
-    pub bottom: Option<Au>,
-    pub left: Option<Au>,
+    pub top: Option<Length>,
+    pub right: Option<Length>,
+    pub bottom: Option<Length>,
+    pub left: Option<Length>,
 }
 
 impl ToCss for ClipRect {
@@ -531,50 +546,6 @@ impl ClipRectOrAuto {
 
 /// <color> | auto
 pub type ColorOrAuto = Either<Color, Auto>;
-
-/// A wrapper of Au, but the value >= 0.
-pub type NonNegativeAu = NonNegative<Au>;
-
-impl NonNegativeAu {
-    /// Return a zero value.
-    #[inline]
-    pub fn zero() -> Self {
-        NonNegative::<Au>(Au(0))
-    }
-
-    /// Return a NonNegativeAu from pixel.
-    #[inline]
-    pub fn from_px(px: i32) -> Self {
-        NonNegative::<Au>(Au::from_px(::std::cmp::max(px, 0)))
-    }
-
-    /// Get the inner value of |NonNegativeAu.0|.
-    #[inline]
-    pub fn value(self) -> i32 {
-        (self.0).0
-    }
-
-    /// Scale this NonNegativeAu.
-    #[inline]
-    pub fn scale_by(self, factor: f32) -> Self {
-        // scale this by zero if factor is negative.
-        NonNegative::<Au>(self.0.scale_by(factor.max(0.)))
-    }
-}
-
-impl ops::Add<NonNegativeAu> for NonNegativeAu {
-    type Output = NonNegativeAu;
-    fn add(self, other: Self) -> Self {
-        (self.0 + other.0).into()
-    }
-}
-
-impl From<Au> for NonNegativeAu {
-    #[inline]
-    fn from(au: Au) -> NonNegativeAu {
-        NonNegative::<Au>(au)
-    }
-}
 
 /// The computed value of a CSS `url()`, resolved relative to the stylesheet URL.
 #[cfg(feature = "servo")]

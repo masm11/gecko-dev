@@ -10,6 +10,7 @@
 #include "nsIClassInfoImpl.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
+#include "nsXULAppAPI.h"
 #include "LabeledEventQueue.h"
 #include "MainThreadQueue.h"
 #include "mozilla/AbstractThread.h"
@@ -32,6 +33,12 @@ using namespace mozilla;
 
 static MOZ_THREAD_LOCAL(bool) sTLSIsMainThread;
 static MOZ_THREAD_LOCAL(PRThread*) gTlsCurrentVirtualThread;
+
+bool
+NS_IsMainThreadTLSInitialized()
+{
+  return sTLSIsMainThread.initialized();
+}
 
 bool
 NS_IsMainThread()

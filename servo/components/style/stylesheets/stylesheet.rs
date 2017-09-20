@@ -10,7 +10,7 @@ use fallible::FallibleVec;
 use fnv::FnvHashMap;
 use invalidation::media_queries::{MediaListKey, ToMediaListKey};
 #[cfg(feature = "gecko")]
-use malloc_size_of::MallocSizeOfOps;
+use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use media_queries::{MediaList, Device};
 use parking_lot::RwLock;
 use parser::{ParserContext, ParserErrorContext};
@@ -30,9 +30,9 @@ pub struct UserAgentStylesheets {
     /// The lock used for user-agent stylesheets.
     pub shared_lock: SharedRwLock,
     /// The user or user agent stylesheets.
-    pub user_or_user_agent_stylesheets: Vec<Stylesheet>,
+    pub user_or_user_agent_stylesheets: Vec<DocumentStyleSheet>,
     /// The quirks mode stylesheet.
-    pub quirks_mode_stylesheet: Stylesheet,
+    pub quirks_mode_stylesheet: DocumentStyleSheet,
 }
 
 /// A set of namespaces applying to a given stylesheet.
@@ -62,6 +62,8 @@ pub struct StylesheetContents {
     pub quirks_mode: QuirksMode,
     /// This stylesheet's source map URL.
     pub source_map_url: RwLock<Option<String>>,
+    /// This stylesheet's source URL.
+    pub source_url: RwLock<Option<String>>,
 }
 
 impl StylesheetContents {
@@ -78,7 +80,7 @@ impl StylesheetContents {
         line_number_offset: u32
     ) -> Self {
         let namespaces = RwLock::new(Namespaces::default());
-        let (rules, source_map_url) = Stylesheet::parse_rules(
+        let (rules, source_map_url, source_url) = Stylesheet::parse_rules(
             css,
             &url_data,
             origin,
@@ -97,6 +99,7 @@ impl StylesheetContents {
             namespaces: namespaces,
             quirks_mode: quirks_mode,
             source_map_url: RwLock::new(source_map_url),
+            source_url: RwLock::new(source_url),
         }
     }
 
@@ -122,7 +125,8 @@ impl StylesheetContents {
     #[cfg(feature = "gecko")]
     pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
         // Measurement of other fields may be added later.
-        self.rules.read_with(guard).size_of(guard, ops)
+        self.rules.unconditional_shallow_size_of(ops) +
+            self.rules.read_with(guard).size_of(guard, ops)
     }
 }
 
@@ -145,6 +149,7 @@ impl DeepCloneWithLock for StylesheetContents {
             url_data: RwLock::new((*self.url_data.read()).clone()),
             namespaces: RwLock::new((*self.namespaces.read()).clone()),
             source_map_url: RwLock::new((*self.source_map_url.read()).clone()),
+            source_url: RwLock::new((*self.source_map_url.read()).clone()),
         }
     }
 }
@@ -313,7 +318,7 @@ impl Stylesheet {
         where R: ParseErrorReporter
     {
         let namespaces = RwLock::new(Namespaces::default());
-        let (rules, source_map_url) =
+        let (rules, source_map_url, source_url) =
             Stylesheet::parse_rules(
                 css,
                 &url_data,
@@ -336,6 +341,7 @@ impl Stylesheet {
         let mut guard = existing.shared_lock.write();
         *existing.contents.rules.write_with(&mut guard) = CssRules(rules);
         *existing.contents.source_map_url.write() = source_map_url;
+        *existing.contents.source_url.write() = source_url;
     }
 
     fn parse_rules<R: ParseErrorReporter>(
@@ -348,7 +354,7 @@ impl Stylesheet {
         error_reporter: &R,
         quirks_mode: QuirksMode,
         line_number_offset: u32
-    ) -> (Vec<CssRule>, Option<String>) {
+    ) -> (Vec<CssRule>, Option<String>, Option<String>) {
         let mut rules = Vec::new();
         let mut input = ParserInput::new_with_line_number_offset(css, line_number_offset);
         let mut input = Parser::new(&mut input);
@@ -398,7 +404,8 @@ impl Stylesheet {
         }
 
         let source_map_url = input.current_source_map_url().map(String::from);
-        (rules, source_map_url)
+        let source_url = input.current_source_url().map(String::from);
+        (rules, source_map_url, source_url)
     }
 
     /// Creates an empty stylesheet and parses it with a given base url, origin

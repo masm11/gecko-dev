@@ -11,13 +11,13 @@ use cssparser::serialize_identifier;
 use custom_properties;
 use std::fmt;
 use style_traits::ToCss;
-use values::computed::{Context, ToComputedValue};
 
 /// An [image].
 ///
 /// [image]: https://drafts.csswg.org/css-images/#image-values
-#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
+#[derive(Clone, PartialEq, ToComputedValue)]
 pub enum Image<Gradient, MozImageRect, ImageUrl> {
     /// A `<url()>` image.
     Url(ImageUrl),
@@ -34,49 +34,9 @@ pub enum Image<Gradient, MozImageRect, ImageUrl> {
     PaintWorklet(PaintWorklet),
 }
 
-// Can't just use derive(ToComputedValue) on Image, because when trying to do
-// "impl<T> ToComputedValue for Box<T>" the Rust compiler complains that
-// "impl<T> ToComputedValue for T where T: ComputedValueAsSpecified + Clone"
-// aleady implements ToComputedValue for std::boxed::Box<_> and hence we have
-// conflicting implementations.
-impl<Gradient: ToComputedValue,
-     MozImageRect: ToComputedValue,
-     ImageUrl: ToComputedValue> ToComputedValue for Image<Gradient, MozImageRect, ImageUrl> {
-    type ComputedValue = Image<<Gradient as ToComputedValue>::ComputedValue,
-                               <MozImageRect as ToComputedValue>::ComputedValue,
-                               <ImageUrl as ToComputedValue>::ComputedValue>;
-
-    #[inline]
-    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
-        match *self {
-            Image::Url(ref url) => Image::Url(url.to_computed_value(context)),
-            Image::Gradient(ref gradient) =>
-                Image::Gradient(Box::new(gradient.to_computed_value(context))),
-            Image::Rect(ref rect) => Image::Rect(Box::new(rect.to_computed_value(context))),
-            Image::Element(ref atom) => Image::Element(atom.to_computed_value(context)),
-            #[cfg(feature = "servo")]
-            Image::PaintWorklet(ref worklet) => Image::PaintWorklet(worklet.to_computed_value(context)),
-        }
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        match *computed {
-            Image::Url(ref url) => Image::Url(ImageUrl::from_computed_value(url)),
-            Image::Gradient(ref boxed_gradient) =>
-                Image::Gradient(Box::new(Gradient::from_computed_value(&*boxed_gradient))),
-            Image::Rect(ref boxed_rect) =>
-                Image::Rect(Box::new(MozImageRect::from_computed_value(&*boxed_rect))),
-            Image::Element(ref atom) => Image::Element(Atom::from_computed_value(atom)),
-            #[cfg(feature = "servo")]
-            Image::PaintWorklet(ref worklet) =>
-                Image::PaintWorklet(PaintWorklet::from_computed_value(worklet)),
-        }
-    }
-}
-
 /// A CSS gradient.
 /// https://drafts.csswg.org/css-images/#gradients
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[derive(Clone, Debug, PartialEq, ToComputedValue)]
 pub struct Gradient<LineDirection, Length, LengthOrPercentage, Position, Color, Angle> {
@@ -93,6 +53,7 @@ pub struct Gradient<LineDirection, Length, LengthOrPercentage, Position, Color, 
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 /// Whether we used the modern notation or the compatibility `-webkit`, `-moz` prefixes.
 pub enum CompatMode {
@@ -105,6 +66,7 @@ pub enum CompatMode {
 }
 
 /// A gradient kind.
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue)]
 pub enum GradientKind<LineDirection, Length, LengthOrPercentage, Position, Angle> {
@@ -116,6 +78,7 @@ pub enum GradientKind<LineDirection, Length, LengthOrPercentage, Position, Angle
 
 /// A radial gradient's ending shape.
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue, ToCss)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum EndingShape<Length, LengthOrPercentage> {
     /// A circular gradient.
@@ -126,6 +89,7 @@ pub enum EndingShape<Length, LengthOrPercentage> {
 
 /// A circle shape.
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum Circle<Length> {
     /// A circle radius.
@@ -136,6 +100,7 @@ pub enum Circle<Length> {
 
 /// An ellipse shape.
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue, ToCss)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub enum Ellipse<LengthOrPercentage> {
     /// An ellipse pair of radii.
@@ -157,6 +122,7 @@ add_impls_for_keyword_enum!(ShapeExtent);
 
 /// A gradient item.
 /// https://drafts.csswg.org/css-images-4/#color-stop-syntax
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[derive(Clone, Copy, Debug, PartialEq, ToComputedValue, ToCss)]
 pub enum GradientItem<Color, LengthOrPercentage> {
@@ -169,6 +135,7 @@ pub enum GradientItem<Color, LengthOrPercentage> {
 /// A color stop.
 /// https://drafts.csswg.org/css-images/#typedef-color-stop-list
 #[derive(Clone, Copy, PartialEq, ToComputedValue, ToCss)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 pub struct ColorStop<Color, LengthOrPercentage> {
     /// The color of this stop.
@@ -207,6 +174,7 @@ impl ToCss for PaintWorklet {
 ///
 /// `-moz-image-rect(<uri>, top, right, bottom, left);`
 #[allow(missing_docs)]
+#[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
 #[css(comma, function)]
 #[derive(Clone, Debug, PartialEq, ToComputedValue, ToCss)]

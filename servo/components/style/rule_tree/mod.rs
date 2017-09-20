@@ -67,7 +67,7 @@ impl Drop for RuleTree {
 #[cfg(feature = "gecko")]
 impl MallocSizeOf for RuleTree {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
-        let mut n = ops.malloc_size_of(self.root.ptr());
+        let mut n = unsafe { ops.malloc_size_of(self.root.ptr()) };
         n += self.root.get().size_of(ops);
         n
     }
@@ -806,7 +806,7 @@ impl MallocSizeOf for RuleNode {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         let mut n = 0;
         for child in self.iter_children() {
-            n += ops.malloc_size_of(child.ptr());
+            n += unsafe { ops.malloc_size_of(child.ptr()) };
             n += unsafe { (*child.ptr()).size_of(ops) };
         }
         n
@@ -819,7 +819,7 @@ struct WeakRuleNode {
 }
 
 /// A strong reference to a rule node.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 pub struct StrongRuleNode {
     p: NonZeroPtrMut<RuleNode>,
 }

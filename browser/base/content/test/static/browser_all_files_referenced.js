@@ -87,10 +87,6 @@ var whitelist = [
   {file: "resource://app/modules/NewTabSearchProvider.jsm"},
   {file: "resource://app/modules/NewTabWebChannel.jsm"},
 
-  // browser/extensions/activity-stream/data/content/activity-stream-prerendered.html
-  // This will used when Bug 1397875 lands
-  {file: "resource://activity-stream/data/content/activity-stream-prerendered.html"},
-
   // layout/mathml/nsMathMLChar.cpp
   {file: "resource://gre/res/fonts/mathfontSTIXGeneral.properties"},
   {file: "resource://gre/res/fonts/mathfontUnicode.properties"},
@@ -98,6 +94,9 @@ var whitelist = [
   // toolkit/components/places/ColorAnalyzer_worker.js
   {file: "resource://gre/modules/ClusterLib.js"},
   {file: "resource://gre/modules/ColorConversion.js"},
+
+  // Needed by HiddenFrame.jsm, but can't be packaged test-only
+  {file: "chrome://global/content/win.xul"},
 
   // The l10n build system can't package string files only for some platforms.
   {file: "resource://gre/chrome/en-US/locale/en-US/global-platform/mac/accessible.properties",
@@ -171,8 +170,6 @@ var whitelist = [
   {file: "resource://gre/modules/Manifest.jsm"},
   // Bug 1351097
   {file: "resource://gre/modules/accessibility/AccessFu.jsm"},
-  // Bug 1351637
-  {file: "resource://gre/modules/sdk/bootstrap.js"},
 ];
 
 whitelist = new Set(whitelist.filter(item =>

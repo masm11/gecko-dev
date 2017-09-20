@@ -27,6 +27,7 @@ namespace mozilla {
 
 struct ActiveScrolledRoot;
 
+
 namespace layers {
 
 class CompositorBridgeChild;
@@ -70,24 +71,31 @@ public:
                  mozilla::wr::DisplayListBuilder& aBuilder,
                  const StackingContextHelper& aSc,
                  const LayerRect& aRect);
-  already_AddRefed<WebRenderFallbackData> GenerateFallbackData(nsDisplayItem* aItem,
-                                                               wr::DisplayListBuilder& aBuilder,
-                                                               nsDisplayListBuilder* aDisplayListBuilder,
-                                                               LayerRect& aImageRect,
-                                                               LayerPoint& aOffset);
+
+  already_AddRefed<WebRenderFallbackData>
+  GenerateFallbackData(nsDisplayItem* aItem,
+                       wr::DisplayListBuilder& aBuilder,
+                       wr::IpcResourceUpdateQueue& aResourceUpdates,
+                       nsDisplayListBuilder* aDisplayListBuilder,
+                       LayerRect& aImageRect,
+                       LayerPoint& aOffset);
+
   Maybe<wr::WrImageMask> BuildWrMaskImage(nsDisplayItem* aItem,
                                           wr::DisplayListBuilder& aBuilder,
+                                          wr::IpcResourceUpdateQueue& aResources,
                                           const StackingContextHelper& aSc,
                                           nsDisplayListBuilder* aDisplayListBuilder,
                                           const LayerRect& aBounds);
   bool PushItemAsImage(nsDisplayItem* aItem,
                        wr::DisplayListBuilder& aBuilder,
+                       wr::IpcResourceUpdateQueue& aResources,
                        const StackingContextHelper& aSc,
                        nsDisplayListBuilder* aDisplayListBuilder);
   void CreateWebRenderCommandsFromDisplayList(nsDisplayList* aDisplayList,
                                               nsDisplayListBuilder* aDisplayListBuilder,
                                               const StackingContextHelper& aSc,
-                                              wr::DisplayListBuilder& aBuilder);
+                                              wr::DisplayListBuilder& aBuilder,
+                                              wr::IpcResourceUpdateQueue& aResources);
   void EndTransactionWithoutLayer(nsDisplayList* aDisplayList,
                                   nsDisplayListBuilder* aDisplayListBuilder);
   bool IsLayersFreeTransaction() { return mEndTransactionWithoutLayers; }
@@ -241,7 +249,12 @@ private:
 
 private:
   nsIWidget* MOZ_NON_OWNING_REF mWidget;
-  wr::ResourceUpdateQueue mImageKeysToDelete;
+  nsTArray<wr::ImageKey> mImageKeysToDelete;
+  // TODO - This is needed because we have some code that creates image keys
+  // and enqueues them for deletion right away which is bad not only because
+  // of poor texture cache usage, but also because images end up deleted before
+  // they are used. This should hopfully be temporary.
+  nsTArray<wr::ImageKey> mImageKeysToDeleteLater;
   nsTArray<uint64_t> mDiscardedCompositorAnimationsIds;
 
   /* PaintedLayer callbacks; valid at the end of a transaciton,

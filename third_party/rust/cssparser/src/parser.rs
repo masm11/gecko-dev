@@ -35,7 +35,7 @@ impl ParserState {
     pub fn source_location(&self) -> SourceLocation {
         SourceLocation {
             line: self.current_line_number,
-            column: (self.position - self.current_line_start_position) as u32,
+            column: (self.position - self.current_line_start_position + 1) as u32,
         }
     }
 }
@@ -289,6 +289,15 @@ impl<'i: 't, 't> Parser<'i, 't> {
     /// change as parsing proceeds.
     pub fn current_source_map_url(&self) -> Option<&str> {
         self.input.tokenizer.current_source_map_url()
+    }
+
+    /// The source URL, if known.
+    ///
+    /// The source URL is extracted from a specially formatted
+    /// comment.  The last such comment is used, so this value may
+    /// change as parsing proceeds.
+    pub fn current_source_url(&self) -> Option<&str> {
+        self.input.tokenizer.current_source_url()
     }
 
     /// Return the current internal state of the parser (including position within the input).

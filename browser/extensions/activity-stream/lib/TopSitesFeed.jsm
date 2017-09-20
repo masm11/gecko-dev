@@ -12,6 +12,8 @@ const {insertPinned, TOP_SITES_SHOWMORE_LENGTH} = Cu.import("resource://activity
 const {Dedupe} = Cu.import("resource://activity-stream/common/Dedupe.jsm", {});
 const {shortURL} = Cu.import("resource://activity-stream/lib/ShortURL.jsm", {});
 
+XPCOMUtils.defineLazyModuleGetter(this, "filterAdult",
+  "resource://activity-stream/lib/FilterAdult.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "NewTabUtils",
   "resource://gre/modules/NewTabUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Screenshots",
@@ -54,10 +56,13 @@ this.TopSitesFeed = class TopSitesFeed {
     this.store.dispatch(ac.BroadcastToContent(action));
   }
   async getLinksWithDefaults(action) {
-    let frecent = await NewTabUtils.activityStreamLinks.getTopSites();
+    // Get at least SHOWMORE amount so toggling between 1 and 2 rows has sites
+    const numItems = Math.max(this.store.getState().Prefs.values.topSitesCount,
+      TOP_SITES_SHOWMORE_LENGTH);
+    let frecent = await NewTabUtils.activityStreamLinks.getTopSites({numItems});
     const notBlockedDefaultSites = DEFAULT_TOP_SITES.filter(site => !NewTabUtils.blockedLinks.isBlocked({url: site.url}));
     const defaultUrls = notBlockedDefaultSites.map(site => site.url);
-    let pinned = NewTabUtils.pinnedLinks.links;
+    let pinned = this._getPinnedWithData(frecent);
     pinned = pinned.map(site => site && Object.assign({}, site, {
       isDefault: defaultUrls.indexOf(site.url) !== -1,
       hostname: shortURL(site)
@@ -74,12 +79,17 @@ this.TopSitesFeed = class TopSitesFeed {
         });
     }
 
-    // Remove any duplicates from frecent and default sites then insert the
-    // original pinned sites into the deduped frecent ([1]) and defaults ([2])
-    const deduped = this.dedupe.group(pinned, frecent, notBlockedDefaultSites);
-    pinned = insertPinned([...deduped[1], ...deduped[2]], pinned);
+    // Remove any duplicates from frecent and default sites
+    const [, dedupedFrecent, dedupedDefaults] = this.dedupe.group(
+      pinned, frecent, notBlockedDefaultSites);
+    const dedupedUnpinned = [...dedupedFrecent, ...dedupedDefaults];
 
-    return pinned.slice(0, TOP_SITES_SHOWMORE_LENGTH);
+    // Remove adult sites if we need to
+    const checkedAdult = this.store.getState().Prefs.values.filterAdult ?
+      filterAdult(dedupedUnpinned) : dedupedUnpinned;
+
+    // Insert the original pinned sites into the deduped frecent and defaults
+    return insertPinned(checkedAdult, pinned).slice(0, numItems);
   }
   async refresh(target = null) {
     if (!this._tippyTopProvider.initialized) {
@@ -99,17 +109,7 @@ this.TopSitesFeed = class TopSitesFeed {
     // Now, get a tippy top icon, a rich icon, or screenshot for every item
     for (let link of links) {
       if (!link) { continue; }
-
-      // Check for tippy top icon or a rich icon.
-      link = this._tippyTopProvider.processSite(link);
-      if (link.tippyTopIcon || link.faviconSize >= MIN_FAVICON_SIZE) { continue; }
-
-      // If no tippy top, then we get a screenshot.
-      if (currentScreenshots[link.url]) {
-        link.screenshot = currentScreenshots[link.url];
-      } else {
-        this.getScreenshot(link.url);
-      }
+      this._fetchIcon(link, currentScreenshots);
     }
     const newAction = {type: at.TOP_SITES_UPDATED, data: links};
 
@@ -122,51 +122,98 @@ this.TopSitesFeed = class TopSitesFeed {
     }
     this.lastUpdated = Date.now();
   }
-  _getPinnedWithData() {
-    // Augment the pinned links with any other extra data we have for them already in the store
-    const links = this.store.getState().TopSites.rows;
+  _fetchIcon(link, screenshotCache = {}) {
+    // Check for tippy top icon or a rich icon.
+    this._tippyTopProvider.processSite(link);
+    if (!link.tippyTopIcon && (!link.favicon || link.faviconSize < MIN_FAVICON_SIZE)) {
+      // If no tippy top, then we get a screenshot.
+      if (screenshotCache[link.url]) {
+        link.screenshot = screenshotCache[link.url];
+      } else {
+        this.getScreenshot(link.url);
+      }
+    }
+  }
+  _getPinnedWithData(links) {
+    // Augment the pinned links with any other extra data we have for them already in the store.
+    // Alternatively you can pass in some links that you know have data you want the pinned links
+    // to also have. This is useful for start up to make sure pinned links have favicons
+    // (See github ticket #3428 fore more details)
+    const originalLinks = links || this.store.getState().TopSites.rows;
     const pinned = NewTabUtils.pinnedLinks.links;
     return pinned.map(pinnedLink => {
       if (pinnedLink) {
         const hostname = shortURL(pinnedLink);
-        return Object.assign(links.find(link => link && link.url === pinnedLink.url) || {hostname}, pinnedLink);
+        const originalLink = originalLinks.find(link => link && link.url === pinnedLink.url);
+        // If it's a new link then it won't have an icon, so fetch one
+        if (!originalLink) {
+          this._fetchIcon(pinnedLink);
+        }
+        return Object.assign(originalLink || {hostname}, pinnedLink);
       }
       return pinnedLink;
     });
   }
+
+  /**
+   * Inform others that top sites data has been updated due to pinned changes.
+   */
   _broadcastPinnedSitesUpdated() {
-    this.store.dispatch(ac.BroadcastToContent({
-      type: at.PINNED_SITES_UPDATED,
-      data: this._getPinnedWithData()
-    }));
+    // Refresh to update pinned sites with screenshots, trigger deduping, etc.
+    this.refresh();
   }
+
+  /**
+   * Pin a site at a specific position saving only the desired keys.
+   */
+  _pinSiteAt({label, url}, index) {
+    const toPin = {url};
+    if (label) {
+      toPin.label = label;
+    }
+    NewTabUtils.pinnedLinks.pin(toPin, index);
+  }
+
+  /**
+   * Handle a pin action of a site to a position.
+   */
   pin(action) {
     const {site, index} = action.data;
-    NewTabUtils.pinnedLinks.pin(site, index);
+    this._pinSiteAt(site, index);
     this._broadcastPinnedSitesUpdated();
   }
+
+  /**
+   * Handle an unpin action of a site.
+   */
   unpin(action) {
     const {site} = action.data;
     NewTabUtils.pinnedLinks.unpin(site);
     this._broadcastPinnedSitesUpdated();
   }
+
+  /**
+   * Insert a site to pin at a position shifting over any other pinned sites.
+   */
   _insertPin(site, index) {
-    // Insert a pin at the given index. If that slot is already taken, we need
-    // to insert it in the next slot. Rinse and repeat if that next slot is also
-    // taken.
+    // For existing sites, recursively push it and others to the next positions
     let pinned = NewTabUtils.pinnedLinks.links;
     if (pinned.length > index && pinned[index]) {
       this._insertPin(pinned[index], index + 1);
     }
-    NewTabUtils.pinnedLinks.pin(site, index);
+    this._pinSiteAt(site, index);
   }
+
+  /**
+   * Handle an add action of a site.
+   */
   add(action) {
     // Adding a top site pins it in the first slot, pushing over any link already
     // pinned in the slot.
     this._insertPin(action.data.site, 0);
-
     this._broadcastPinnedSitesUpdated();
   }
+
   async onAction(action) {
     switch (action.type) {
       case at.INIT:

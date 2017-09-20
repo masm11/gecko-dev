@@ -94,7 +94,7 @@ const globalImportContext = typeof Window === "undefined" ? BACKGROUND_PROCESS :
 //   UNINIT: "UNINIT"
 // }
 const actionTypes = {};
-for (const type of ["BLOCK_URL", "BOOKMARK_URL", "DELETE_BOOKMARK_BY_ID", "DELETE_HISTORY_URL", "DELETE_HISTORY_URL_CONFIRM", "DIALOG_CANCEL", "DIALOG_OPEN", "INIT", "LOCALE_UPDATED", "MIGRATION_CANCEL", "MIGRATION_COMPLETED", "MIGRATION_START", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "PINNED_SITES_UPDATED", "PLACES_BOOKMARK_ADDED", "PLACES_BOOKMARK_CHANGED", "PLACES_BOOKMARK_REMOVED", "PLACES_HISTORY_CLEARED", "PLACES_LINK_BLOCKED", "PLACES_LINK_DELETED", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_REGISTER", "SECTION_UPDATE", "SET_PREF", "SHOW_FIREFOX_ACCOUNTS", "SNIPPETS_DATA", "SNIPPETS_RESET", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_PERFORMANCE_EVENT", "TELEMETRY_UNDESIRED_EVENT", "TELEMETRY_USER_EVENT", "TOP_SITES_ADD", "TOP_SITES_PIN", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "UNINIT"]) {
+for (const type of ["BLOCK_URL", "BOOKMARK_URL", "DELETE_BOOKMARK_BY_ID", "DELETE_HISTORY_URL", "DELETE_HISTORY_URL_CONFIRM", "DIALOG_CANCEL", "DIALOG_OPEN", "INIT", "LOCALE_UPDATED", "MIGRATION_CANCEL", "MIGRATION_COMPLETED", "MIGRATION_START", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "PLACES_BOOKMARK_ADDED", "PLACES_BOOKMARK_CHANGED", "PLACES_BOOKMARK_REMOVED", "PLACES_HISTORY_CLEARED", "PLACES_LINK_BLOCKED", "PLACES_LINK_DELETED", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SEARCH_BOX_FOCUSED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SET_PREF", "SHOW_FIREFOX_ACCOUNTS", "SNIPPETS_DATA", "SNIPPETS_RESET", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_PERFORMANCE_EVENT", "TELEMETRY_UNDESIRED_EVENT", "TELEMETRY_USER_EVENT", "TOP_SITES_ADD", "TOP_SITES_PIN", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "UNINIT"]) {
   actionTypes[type] = type;
 }
 
@@ -337,7 +337,7 @@ module.exports = {
   // minimum size necessary to show a rich icon instead of a screenshot
   MIN_RICH_FAVICON_SIZE: 96,
   // minimum size necessary to show any icon in the top left corner with a screenshot
-  MIN_CORNER_FAVICON_SIZE: 32
+  MIN_CORNER_FAVICON_SIZE: 16
 };
 
 /***/ }),
@@ -448,7 +448,6 @@ function insertPinned(links, pinned) {
 function TopSites(prevState = INITIAL_STATE.TopSites, action) {
   let hasMatch;
   let newRows;
-  let pinned;
   switch (action.type) {
     case at.TOP_SITES_UPDATED:
       if (!action.data) {
@@ -497,10 +496,6 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
       // events and removing the site that was blocked/deleted with an empty slot.
       // Once refresh() finishes, we update the UI again with a new site
       newRows = prevState.rows.filter(val => val && val.url !== action.data.url);
-      return Object.assign({}, prevState, { rows: newRows });
-    case at.PINNED_SITES_UPDATED:
-      pinned = action.data;
-      newRows = insertPinned(prevState.rows, pinned).slice(0, TOP_SITES_SHOWMORE_LENGTH);
       return Object.assign({}, prevState, { rows: newRows });
     default:
       return prevState;
@@ -583,6 +578,19 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
         }
         return section;
       });
+    case at.SECTION_UPDATE_CARD:
+      return prevState.map(section => {
+        if (section && section.id === action.data.id && section.rows) {
+          const newRows = section.rows.map(card => {
+            if (card.url === action.data.url) {
+              return Object.assign({}, card, action.data.options);
+            }
+            return card;
+          });
+          return Object.assign({}, section, { rows: newRows });
+        }
+        return section;
+      });
     case at.PLACES_BOOKMARK_ADDED:
       if (!action.data) {
         return prevState;
@@ -657,8 +665,10 @@ module.exports = {
 
 
 /* istanbul ignore if */
+// Note: normally we would just feature detect Components.utils here, but
+// unfortunately that throws an ugly warning in content if we do.
 
-if (typeof Components !== "undefined" && Components.utils) {
+if (typeof Window === "undefined" && typeof Components !== "undefined" && Components.utils) {
   Components.utils.import("resource://gre/modules/Services.jsm");
 }
 
@@ -794,6 +804,7 @@ const TopSiteLink = props => {
   let imageStyle;
   let showSmallFavicon = false;
   let smallFaviconStyle;
+  let smallFaviconFallback;
   if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
     // styles and class names for top sites with rich icons
     imageClassName = "top-site-icon rich-icon";
@@ -806,10 +817,15 @@ const TopSiteLink = props => {
     imageClassName = `screenshot${link.screenshot ? " active" : ""}`;
     imageStyle = { backgroundImage: link.screenshot ? `url(${link.screenshot})` : "none" };
 
-    // only show a favicon in top left if it's greater than 32x32
+    // only show a favicon in top left if it's greater than 16x16
     if (faviconSize >= MIN_CORNER_FAVICON_SIZE) {
       showSmallFavicon = true;
       smallFaviconStyle = { backgroundImage: `url(${link.favicon})` };
+    } else if (link.screenshot) {
+      // Don't show a small favicon if there is no screenshot, because that
+      // would result in two fallback icons
+      showSmallFavicon = true;
+      smallFaviconFallback = true;
     }
   }
   return React.createElement(
@@ -827,7 +843,11 @@ const TopSiteLink = props => {
           props.title[0]
         ),
         React.createElement("div", { className: imageClassName, style: imageStyle }),
-        showSmallFavicon && React.createElement("div", { className: "top-site-icon default-icon", style: smallFaviconStyle })
+        showSmallFavicon && React.createElement(
+          "div",
+          { className: "top-site-icon default-icon", style: smallFaviconStyle },
+          smallFaviconFallback && props.title[0]
+        )
       ),
       React.createElement(
         "div",
@@ -848,7 +868,7 @@ TopSiteLink.defaultProps = {
   link: {}
 };
 
-class TopSite extends React.Component {
+class TopSite extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = { showContextMenu: false, activeTile: null };
@@ -991,7 +1011,7 @@ const { actionCreators: ac } = __webpack_require__(0);
 const linkMenuOptions = __webpack_require__(18);
 const DEFAULT_SITE_MENU_OPTIONS = ["CheckPinTopSite", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl"];
 
-class LinkMenu extends React.Component {
+class LinkMenu extends React.PureComponent {
   getOptions() {
     const props = this.props;
     const { site, index, source } = props;
@@ -1046,10 +1066,10 @@ module.exports._unconnected = LinkMenu;
 const ReactDOM = __webpack_require__(11);
 const Base = __webpack_require__(12);
 const { Provider } = __webpack_require__(3);
-const initStore = __webpack_require__(28);
+const initStore = __webpack_require__(29);
 const { reducers } = __webpack_require__(6);
-const DetectUserSessionStart = __webpack_require__(30);
-const { addSnippetsSubscriber } = __webpack_require__(31);
+const DetectUserSessionStart = __webpack_require__(31);
+const { addSnippetsSubscriber } = __webpack_require__(32);
 const { actionTypes: at, actionCreators: ac } = __webpack_require__(0);
 
 new DetectUserSessionStart().sendEventOrAddListener();
@@ -1092,6 +1112,7 @@ const ManualMigration = __webpack_require__(22);
 const PreferencesPane = __webpack_require__(23);
 const Sections = __webpack_require__(24);
 const { actionTypes: at, actionCreators: ac } = __webpack_require__(0);
+const { PrerenderData } = __webpack_require__(28);
 
 // Add the locale data for pluralization and relative-time formatting for now,
 // this just uses english locale data. We can make this more sophisticated if
@@ -1102,7 +1123,11 @@ function addLocaleDataForReactIntl({ locale, textDirection }) {
   document.documentElement.dir = textDirection;
 }
 
-class Base extends React.Component {
+class Base extends React.PureComponent {
+  componentWillMount() {
+    this.sendNewTabRehydrated(this.props.App);
+  }
+
   componentDidMount() {
     // Request state AFTER the first render to ensure we don't cause the
     // prerendered DOM to be unmounted. Otherwise, NEW_TAB_STATE_REQUEST is
@@ -1117,7 +1142,10 @@ class Base extends React.Component {
       document.getElementById("favicon").href += "#";
     }, { once: true });
   }
+
   componentWillUpdate({ App }) {
+    this.sendNewTabRehydrated(App);
+
     // Early loads might not have locale yet, so wait until we do
     if (App.locale && App.locale !== this.props.App.locale) {
       addLocaleDataForReactIntl(App);
@@ -1131,10 +1159,24 @@ class Base extends React.Component {
     }
   }
 
+  // The NEW_TAB_REHYDRATED event is used to inform feeds that their
+  // data has been consumed e.g. for counting the number of tabs that
+  // have rendered that data.
+  sendNewTabRehydrated(App) {
+    if (App && App.initialized && !this.renderNotified) {
+      this.props.dispatch(ac.SendToMain({ type: at.NEW_TAB_REHYDRATED, data: {} }));
+      this.renderNotified = true;
+    }
+  }
+
   render() {
     const props = this.props;
     const { locale, strings, initialized } = props.App;
     const prefs = props.Prefs.values;
+
+    const shouldBeFixedToTop = PrerenderData.arePrefsValid(name => prefs[name]);
+
+    const outerClassName = `outer-wrapper${shouldBeFixedToTop ? " fixed-to-top" : ""}`;
 
     if (!props.isPrerendered && !initialized) {
       return null;
@@ -1148,7 +1190,7 @@ class Base extends React.Component {
       { key: "STATIC", locale: locale, messages: strings },
       React.createElement(
         "div",
-        { className: "outer-wrapper" },
+        { className: outerClassName },
         React.createElement(
           "main",
           null,
@@ -1165,6 +1207,7 @@ class Base extends React.Component {
 }
 
 module.exports = connect(state => ({ App: state.App, Prefs: state.Prefs }))(Base);
+module.exports._unconnected = Base;
 
 /***/ }),
 /* 13 */
@@ -1204,7 +1247,7 @@ const TopSites = props => {
           intl: props.intl })),
         placeholderCount > 0 && [...Array(placeholderCount)].map((_, i) => React.createElement(TopSitePlaceholder, { key: i }))
       ),
-      realTopSites.length > 0 && React.createElement(TopSitesEdit, props)
+      React.createElement(TopSitesEdit, props)
     )
   );
 };
@@ -1237,9 +1280,9 @@ const { perfService: perfSvc } = __webpack_require__(7);
  * even split out into a higher-order component to wrap whatever.
  *
  * @class TopSitesPerfTimer
- * @extends {React.Component}
+ * @extends {React.PureComponent}
  */
-class TopSitesPerfTimer extends React.Component {
+class TopSitesPerfTimer extends React.PureComponent {
   constructor(props) {
     super(props);
     // Just for test dependency injection:
@@ -1345,7 +1388,7 @@ const { TopSite, TopSitePlaceholder } = __webpack_require__(8);
 const { TOP_SITES_DEFAULT_LENGTH, TOP_SITES_SHOWMORE_LENGTH } = __webpack_require__(6);
 const { TOP_SITES_SOURCE } = __webpack_require__(5);
 
-class TopSitesEdit extends React.Component {
+class TopSitesEdit extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = {
@@ -1495,7 +1538,6 @@ class TopSitesEdit extends React.Component {
             url: this.props.TopSites.rows[this.state.editIndex].url,
             index: this.state.editIndex,
             editMode: true,
-            link: this.props.TopSites.rows[this.state.editIndex],
             onClose: this.onFormClose,
             dispatch: this.props.dispatch,
             intl: this.props.intl })
@@ -1518,7 +1560,7 @@ const { FormattedMessage } = __webpack_require__(2);
 
 const { TOP_SITES_SOURCE } = __webpack_require__(5);
 
-class TopSiteForm extends React.Component {
+class TopSiteForm extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = {
@@ -1569,13 +1611,6 @@ class TopSiteForm extends React.Component {
       let site = { url: this.cleanUrl() };
       if (this.state.label !== "") {
         site.label = this.state.label;
-      }
-      // Unpin links if the URL changed.
-      if (this.props.link.isPinned && this.props.link.url !== site.url) {
-        this.props.dispatch(ac.SendToMain({
-          type: at.TOP_SITES_UNPIN,
-          data: { site: { url: this.props.link.url } }
-        }));
       }
       this.props.dispatch(ac.SendToMain({
         type: at.TOP_SITES_PIN,
@@ -1701,7 +1736,7 @@ module.exports = TopSiteForm;
 
 const React = __webpack_require__(1);
 
-class ContextMenu extends React.Component {
+class ContextMenu extends React.PureComponent {
   constructor(props) {
     super(props);
     this.hideContext = this.hideContext.bind(this);
@@ -1738,7 +1773,7 @@ class ContextMenu extends React.Component {
   }
 }
 
-class ContextMenuItem extends React.Component {
+class ContextMenuItem extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onClick = this.onClick.bind(this);
@@ -1854,7 +1889,7 @@ module.exports = {
     action: {
       type: at.DIALOG_OPEN,
       data: {
-        onConfirm: [ac.SendToMain({ type: at.DELETE_HISTORY_URL, data: site.url }), ac.UserEvent({ event: "DELETE" })],
+        onConfirm: [ac.SendToMain({ type: at.DELETE_HISTORY_URL, data: { url: site.url, forceBlock: site.bookmarkGuid } }), ac.UserEvent({ event: "DELETE" })],
         body_string_id: ["confirm_history_delete_p1", "confirm_history_delete_notice_p2"],
         confirm_button_string_id: "menu_action_delete"
       }
@@ -1910,10 +1945,10 @@ module.exports.CheckPinTopSite = (site, index) => site.isPinned ? module.exports
 const React = __webpack_require__(1);
 const { connect } = __webpack_require__(3);
 const { FormattedMessage, injectIntl } = __webpack_require__(2);
-const { actionCreators: ac } = __webpack_require__(0);
+const { actionCreators: ac, actionTypes: at } = __webpack_require__(0);
 const { IS_NEWTAB } = __webpack_require__(20);
 
-class Search extends React.Component {
+class Search extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onClick = this.onClick.bind(this);
@@ -1953,6 +1988,14 @@ class Search extends React.Component {
       // In the future, when activity stream is default about:home, this can be renamed
       window.gContentSearchController = new ContentSearchUIController(input, input.parentNode, healthReportKey, searchSource);
       addEventListener("ContentSearchClient", this);
+
+      // Focus the search box if we are on about:home
+      if (!IS_NEWTAB) {
+        input.focus();
+        // Tell the addon side that search box is focused in case the browser
+        // needs to be focused too.
+        this.props.dispatch(ac.SendToMain({ type: at.SEARCH_BOX_FOCUSED }));
+      }
     } else {
       window.gContentSearchController = null;
       removeEventListener("ContentSearchClient", this);
@@ -2137,7 +2180,7 @@ const { actionTypes: at, actionCreators: ac } = __webpack_require__(0);
  * 3.  After 3 active days
  * 4.  User clicks "Cancel" on the import wizard (currently not implemented).
  */
-class ManualMigration extends React.Component {
+class ManualMigration extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onLaunchTour = this.onLaunchTour.bind(this);
@@ -2203,7 +2246,7 @@ const getFormattedMessage = message => typeof message === "string" ? React.creat
 const PreferencesInput = props => React.createElement(
   "section",
   null,
-  React.createElement("input", { type: "checkbox", id: props.prefName, name: props.prefName, checked: props.value, onChange: props.onChange, className: props.className }),
+  React.createElement("input", { type: "checkbox", id: props.prefName, name: props.prefName, checked: props.value, disabled: props.disabled, onChange: props.onChange, className: props.className }),
   React.createElement(
     "label",
     { htmlFor: props.prefName, className: props.labelClassName },
@@ -2216,7 +2259,7 @@ const PreferencesInput = props => React.createElement(
   )
 );
 
-class PreferencesPane extends React.Component {
+class PreferencesPane extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = { visible: false };
@@ -2303,8 +2346,9 @@ class PreferencesPane extends React.Component {
               titleString: { id: "settings_pane_topsites_header" }, descString: { id: "settings_pane_topsites_body" } }),
             React.createElement(
               "div",
-              { className: "options" },
-              React.createElement(PreferencesInput, { className: "showMoreTopSites", prefName: "topSitesCount", value: prefs.topSitesCount !== TOP_SITES_DEFAULT_LENGTH, onChange: this.handlePrefChange,
+              { className: `options${prefs.showTopSites ? "" : " disabled"}` },
+              React.createElement(PreferencesInput, { className: "showMoreTopSites", prefName: "topSitesCount", disabled: !prefs.showTopSites,
+                value: prefs.topSitesCount !== TOP_SITES_DEFAULT_LENGTH, onChange: this.handlePrefChange,
                 titleString: { id: "settings_pane_topsites_options_showmore" }, labelClassName: "icon icon-topsites" })
             ),
             sections.filter(section => !section.shouldHidePref).map(({ id, title, enabled, pref }) => React.createElement(PreferencesInput, { key: id, className: "showSection", prefName: pref && pref.feed || id,
@@ -2353,7 +2397,7 @@ const VISIBLE = "visible";
 const VISIBILITY_CHANGE_EVENT = "visibilitychange";
 const CARDS_PER_ROW = 3;
 
-class Section extends React.Component {
+class Section extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onInfoEnter = this.onInfoEnter.bind(this);
@@ -2407,7 +2451,7 @@ class Section extends React.Component {
   sendImpressionStatsOrAddListener() {
     const { props } = this;
 
-    if (!props.dispatch) {
+    if (!props.shouldSendImpressionStats || !props.dispatch) {
       return;
     }
 
@@ -2563,7 +2607,7 @@ Section.defaultProps = {
 
 const SectionIntl = injectIntl(Section);
 
-class Sections extends React.Component {
+class Sections extends React.PureComponent {
   render() {
     const sections = this.props.Sections;
     return React.createElement(
@@ -2599,7 +2643,7 @@ const { actionCreators: ac, actionTypes: at } = __webpack_require__(0);
  * this class. Each card will then get a context menu which reflects the actions that
  * can be done on this Card.
  */
-class Card extends React.Component {
+class Card extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = { showContextMenu: false, activeCard: null };
@@ -2642,6 +2686,8 @@ class Card extends React.Component {
     const isContextMenuOpen = this.state.showContextMenu && this.state.activeCard === index;
     // Display "now" as "trending" until we have new strings #3402
     const { icon, intlID } = cardContextTypes[link.type === "now" ? "trending" : link.type] || {};
+    const hasImage = link.image || link.hasImage;
+    const imageStyle = { backgroundImage: link.image ? `url(${link.image})` : "none" };
 
     return React.createElement(
       "li",
@@ -2652,10 +2698,14 @@ class Card extends React.Component {
         React.createElement(
           "div",
           { className: "card" },
-          link.image && React.createElement("div", { className: "card-preview-image", style: { backgroundImage: `url(${link.image})` } }),
+          hasImage && React.createElement(
+            "div",
+            { className: "card-preview-image-outer" },
+            React.createElement("div", { className: `card-preview-image${link.image ? " loaded" : ""}`, style: imageStyle })
+          ),
           React.createElement(
             "div",
-            { className: `card-details${link.image ? "" : " no-image"}` },
+            { className: `card-details${hasImage ? "" : " no-image"}` },
             link.hostname && React.createElement(
               "div",
               { className: "card-host-name" },
@@ -2663,7 +2713,7 @@ class Card extends React.Component {
             ),
             React.createElement(
               "div",
-              { className: `card-text${link.image ? "" : " no-image"}${link.hostname ? "" : " no-host-name"}${icon ? "" : " no-context"}` },
+              { className: ["card-text", icon ? "" : "no-context", link.description ? "" : "no-description", link.hostname ? "" : "no-host-name", hasImage ? "" : "no-image"].join(" ") },
               React.createElement(
                 "h4",
                 { className: "card-title", dir: "auto" },
@@ -2675,14 +2725,20 @@ class Card extends React.Component {
                 link.description
               )
             ),
-            icon && React.createElement(
+            React.createElement(
               "div",
               { className: "card-context" },
-              React.createElement("span", { className: `card-context-icon icon icon-${icon}` }),
-              React.createElement(
+              icon && !link.context && React.createElement("span", { className: `card-context-icon icon icon-${icon}` }),
+              link.icon && link.context && React.createElement("span", { className: "card-context-icon icon", style: { backgroundImage: `url('${link.icon}')` } }),
+              intlID && !link.context && React.createElement(
                 "div",
                 { className: "card-context-label" },
                 React.createElement(FormattedMessage, { id: intlID, defaultMessage: "Visited" })
+              ),
+              link.context && React.createElement(
+                "div",
+                { className: "card-context-label" },
+                link.context
               )
             )
           )
@@ -2746,7 +2802,7 @@ module.exports = {
 const React = __webpack_require__(1);
 const { FormattedMessage } = __webpack_require__(2);
 
-class Topic extends React.Component {
+class Topic extends React.PureComponent {
   render() {
     const { url, name } = this.props;
     return React.createElement(
@@ -2761,7 +2817,7 @@ class Topic extends React.Component {
   }
 }
 
-class Topics extends React.Component {
+class Topics extends React.PureComponent {
   render() {
     const { topics, read_more_endpoint } = this.props;
     return React.createElement(
@@ -2792,11 +2848,102 @@ module.exports.Topic = Topic;
 
 /***/ }),
 /* 28 */
+/***/ (function(module, exports) {
+
+class _PrerenderData {
+  constructor(options) {
+    this.initialPrefs = options.initialPrefs;
+    this.initialSections = options.initialSections;
+    this._setValidation(options.validation);
+  }
+
+  get validation() {
+    return this._validation;
+  }
+
+  set validation(value) {
+    this._setValidation(value);
+  }
+
+  get invalidatingPrefs() {
+    return this._invalidatingPrefs;
+  }
+
+  // This is needed so we can use it in the constructor
+  _setValidation(value = []) {
+    this._validation = value;
+    this._invalidatingPrefs = value.reduce((result, next) => {
+      if (typeof next === "string") {
+        result.push(next);
+        return result;
+      } else if (next && next.oneOf) {
+        return result.concat(next.oneOf);
+      }
+      throw new Error("Your validation configuration is not properly configured");
+    }, []);
+  }
+
+  arePrefsValid(getPref) {
+    for (const prefs of this.validation) {
+      // {oneOf: ["foo", "bar"]}
+      if (prefs && prefs.oneOf && !prefs.oneOf.some(name => getPref(name) === this.initialPrefs[name])) {
+        return false;
+
+        // "foo"
+      } else if (getPref(prefs) !== this.initialPrefs[prefs]) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+var PrerenderData = new _PrerenderData({
+  initialPrefs: {
+    "migrationExpired": true,
+    "showTopSites": true,
+    "showSearch": true,
+    "topSitesCount": 6,
+    "feeds.section.topstories": true,
+    "feeds.section.highlights": true
+  },
+  // Prefs listed as invalidating will prevent the prerendered version
+  // of AS from being used if their value is something other than what is listed
+  // here. This is required because some preferences cause the page layout to be
+  // too different for the prerendered version to be used. Unfortunately, this
+  // will result in users who have modified some of their preferences not being
+  // able to get the benefits of prerendering.
+  validation: ["showTopSites", "showSearch",
+  // This means if either of these are set to their default values,
+  // prerendering can be used.
+  { oneOf: ["feeds.section.topstories", "feeds.section.highlights"] }],
+  initialSections: [{
+    enabled: true,
+    icon: "pocket",
+    id: "topstories",
+    order: 1,
+    title: { id: "header_recommended_by", values: { provider: "Pocket" } },
+    topics: [{}]
+  }, {
+    enabled: true,
+    id: "highlights",
+    icon: "highlights",
+    order: 2,
+    title: { id: "header_highlights" }
+  }]
+});
+module.exports = {
+  PrerenderData,
+  _PrerenderData
+};
+
+/***/ }),
+/* 29 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /* WEBPACK VAR INJECTION */(function(global) {/* eslint-env mozilla/frame-script */
 
-const { createStore, combineReducers, applyMiddleware } = __webpack_require__(29);
+const { createStore, combineReducers, applyMiddleware } = __webpack_require__(30);
 const { actionTypes: at, actionCreators: ac, actionUtils: au } = __webpack_require__(0);
 
 const MERGE_STORE_ACTION = "NEW_TAB_INITIAL_STATE";
@@ -2906,13 +3053,13 @@ module.exports.INCOMING_MESSAGE_NAME = INCOMING_MESSAGE_NAME;
 /* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(4)))
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ (function(module, exports) {
 
 module.exports = Redux;
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /* WEBPACK VAR INJECTION */(function(global) {const { actionTypes: at } = __webpack_require__(0);
@@ -2982,7 +3129,7 @@ module.exports = class DetectUserSessionStart {
 /* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(4)))
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /* WEBPACK VAR INJECTION */(function(global) {const DATABASE_NAME = "snippets_db";
@@ -3214,6 +3361,10 @@ class SnippetsProvider {
     // This could happen if fetching failed
     if (!payload) {
       throw new Error("No remote snippets were found in gSnippetsMap.");
+    }
+
+    if (typeof payload !== "string") {
+      throw new Error("Snippet payload was incorrectly formatted");
     }
 
     // Note that injecting snippets can throw if they're invalid XML.

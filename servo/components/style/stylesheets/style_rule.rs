@@ -6,7 +6,7 @@
 
 use cssparser::SourceLocation;
 #[cfg(feature = "gecko")]
-use malloc_size_of::{MallocShallowSizeOf, MallocSizeOf, MallocSizeOfOps};
+use malloc_size_of::{MallocShallowSizeOf, MallocSizeOf, MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use properties::PropertyDeclarationBlock;
 use selector_parser::SelectorImpl;
 use selectors::SelectorList;
@@ -55,10 +55,11 @@ impl StyleRule {
             // It's safe to measure this ThinArc directly because it's the
             // "primary" reference. (The secondary references are on the
             // Stylist.)
-            n += ops.malloc_size_of(selector.thin_arc_heap_ptr());
+            n += unsafe { ops.malloc_size_of(selector.thin_arc_heap_ptr()) };
         }
 
-        n += self.block.read_with(guard).size_of(ops);
+        n += self.block.unconditional_shallow_size_of(ops) +
+             self.block.read_with(guard).size_of(ops);
 
         n
     }

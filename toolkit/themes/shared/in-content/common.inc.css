@@ -174,8 +174,6 @@ xul|*.tab-text {
 
 html|button {
   padding: 3px;
-  /* override forms.css */
-  font: inherit;
 }
 
 /* xul buttons and menulists */
@@ -705,7 +703,8 @@ xul|*.radio-label-box {
   fill-opacity: 0.8;
 }
 
-*|*.category[selected] > *|*.category-icon {
+*|*.category[selected] > *|*.category-icon,
+*|*.category.selected > *|*.category-icon {
   fill-opacity: 1;
 }
 
