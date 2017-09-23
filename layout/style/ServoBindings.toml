@@ -23,6 +23,12 @@ args = ["-DOS_LINUX=1"]
 "arch=x86" = ["-m32"]
 "arch=x86_64" = ["-m64"]
 
+[build."os=android"]
+args = ["-DOS_ANDROID=1"]
+"arch=aarch64" = ["--target=aarch64-linux-android"]
+"arch=arm" = ["--target=armv7-linux-androideabi"]
+"arch=x86" = ["--target=i686-linux-android"]
+
 [build."os=windows"."env=msvc"]
 args = [
     "-DOS_WIN=1", "-DWIN32=1",
@@ -190,7 +196,6 @@ whitelist-types = [
     "Keyframe",
     "nsAttrName",
     "nsAttrValue",
-    "nsBorderColors",
     "nscolor",
     "nsChangeHint",
     "nsCSSCounterDesc",
@@ -389,7 +394,6 @@ structs-types = [
     "mozilla::AnonymousCounterStyle",
     "mozilla::MallocSizeOf",
     "mozilla::OriginFlags",
-    "mozilla::Side",
     "mozilla::UniquePtr",
     "ServoRawOffsetArc",
     "nsIContent",
@@ -443,7 +447,6 @@ structs-types = [
     "StyleShapeSource",
     "StyleTransition",
     "gfxFontFeatureValueSet",
-    "nsBorderColors",
     "nsCSSCounterStyleRule",
     "nsCSSFontFaceRule",
     "nsCSSKeyword",

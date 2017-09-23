@@ -229,7 +229,6 @@ public:
                           wr::DisplayListBuilder& aBuilder,
                           wr::IpcResourceUpdateQueue& aResources,
                           const layers::StackingContextHelper& aSc,
-                          nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                           mozilla::layers::WebRenderLayerManager* aManager,
                           nsDisplayListBuilder* aDisplayListBuilder);
 
@@ -279,7 +278,6 @@ private:
                                   wr::DisplayListBuilder& aBuilder,
                                   wr::IpcResourceUpdateQueue& aResources,
                                   const layers::StackingContextHelper& aSc,
-                                  nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                   mozilla::layers::WebRenderLayerManager* aManager,
                                   nsDisplayListBuilder* aDisplayListBuilder);
 
@@ -288,7 +286,6 @@ private:
                                  wr::DisplayListBuilder& aBuilder,
                                  wr::IpcResourceUpdateQueue& aResources,
                                  const layers::StackingContextHelper& aSc,
-                                 nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                  mozilla::layers::WebRenderLayerManager* aManager,
                                  nsDisplayListBuilder* aDisplayListBuilder);
 
@@ -330,18 +327,15 @@ BulletRenderer::CreateWebRenderCommands(nsDisplayItem* aItem,
                                         wr::DisplayListBuilder& aBuilder,
                                         wr::IpcResourceUpdateQueue& aResources,
                                         const layers::StackingContextHelper& aSc,
-                                        nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                         mozilla::layers::WebRenderLayerManager* aManager,
                                         nsDisplayListBuilder* aDisplayListBuilder)
 {
   if (IsImageType()) {
     CreateWebRenderCommandsForImage(aItem, aBuilder, aResources,
-                                    aSc, aParentCommands,
-                                    aManager, aDisplayListBuilder);
+                                    aSc, aManager, aDisplayListBuilder);
   } else if (IsPathType()) {
     CreateWebRenderCommandsForPath(aItem, aBuilder, aResources,
-                                   aSc, aParentCommands,
-                                   aManager, aDisplayListBuilder);
+                                   aSc, aManager, aDisplayListBuilder);
   } else {
     MOZ_ASSERT(IsTextType());
     CreateWebRenderCommandsForText(aItem, aBuilder, aResources, aSc,
@@ -458,7 +452,6 @@ BulletRenderer::CreateWebRenderCommandsForImage(nsDisplayItem* aItem,
                                                 wr::DisplayListBuilder& aBuilder,
                                                 wr::IpcResourceUpdateQueue& aResources,
                                                 const layers::StackingContextHelper& aSc,
-                                                nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                                 mozilla::layers::WebRenderLayerManager* aManager,
                                                 nsDisplayListBuilder* aDisplayListBuilder)
 {
@@ -479,7 +472,7 @@ BulletRenderer::CreateWebRenderCommandsForImage(nsDisplayItem* aItem,
   }
 
   gfx::IntSize size;
-  Maybe<wr::ImageKey> key = aManager->CreateImageKey(aItem, container, aBuilder, aSc, size);
+  Maybe<wr::ImageKey> key = aManager->CreateImageKey(aItem, container, aBuilder, aResources, aSc, size);
   if (key.isNothing()) {
     return;
   }
@@ -490,6 +483,7 @@ BulletRenderer::CreateWebRenderCommandsForImage(nsDisplayItem* aItem,
 
   aBuilder.PushImage(dest,
                      dest,
+                     !aItem->BackfaceIsHidden(),
                      wr::ImageRendering::Auto,
                      key.value());
 }
@@ -499,7 +493,6 @@ BulletRenderer::CreateWebRenderCommandsForPath(nsDisplayItem* aItem,
                                                wr::DisplayListBuilder& aBuilder,
                                                wr::IpcResourceUpdateQueue& aResources,
                                                const layers::StackingContextHelper& aSc,
-                                               nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                                mozilla::layers::WebRenderLayerManager* aManager,
                                                nsDisplayListBuilder* aDisplayListBuilder)
 {
@@ -532,7 +525,7 @@ BulletRenderer::CreateWebRenderCommandsForText(nsDisplayItem* aItem,
   for (layers::GlyphArray& glyphs : mGlyphs) {
     aManager->WrBridge()->PushGlyphs(aBuilder, glyphs.glyphs(), mFont,
                                      glyphs.color().value(),
-                                     aSc, destRect, destRect);
+                                     aSc, destRect, destRect, !aItem->BackfaceIsHidden());
   }
 }
 
@@ -567,7 +560,6 @@ public:
   virtual bool CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder,
                                        mozilla::wr::IpcResourceUpdateQueue&,
                                        const StackingContextHelper& aSc,
-                                       nsTArray<WebRenderParentCommand>& aParentCommands,
                                        mozilla::layers::WebRenderLayerManager* aManager,
                                        nsDisplayListBuilder* aDisplayListBuilder) override;
 
@@ -672,7 +664,6 @@ bool
 nsDisplayBullet::CreateWebRenderCommands(wr::DisplayListBuilder& aBuilder,
                                          wr::IpcResourceUpdateQueue& aResources,
                                          const StackingContextHelper& aSc,
-                                         nsTArray<layers::WebRenderParentCommand>& aParentCommands,
                                          mozilla::layers::WebRenderLayerManager* aManager,
                                          nsDisplayListBuilder* aDisplayListBuilder)
 {
@@ -686,7 +677,7 @@ nsDisplayBullet::CreateWebRenderCommands(wr::DisplayListBuilder& aBuilder,
   if (!mBulletRenderer)
     return false;
 
-  mBulletRenderer->CreateWebRenderCommands(this, aBuilder, aResources, aSc, aParentCommands,
+  mBulletRenderer->CreateWebRenderCommands(this, aBuilder, aResources, aSc,
                                            aManager, aDisplayListBuilder);
   return true;
 }

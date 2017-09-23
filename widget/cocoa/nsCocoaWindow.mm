@@ -92,6 +92,7 @@ enum NSWindowTitleVisibility {
 
 @interface NSWindow(TitleVisibility)
 - (void)setTitleVisibility:(NSWindowTitleVisibility)visibility;
+- (void)setTitlebarAppearsTransparent:(BOOL)isTitlebarTransparent;
 @end
 
 #endif
@@ -486,9 +487,13 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect &aRect,
   mWindow = [[windowClass alloc] initWithContentRect:contentRect styleMask:features 
                                  backing:NSBackingStoreBuffered defer:YES];
 
-  if ([mWindow respondsToSelector:@selector(setTitleVisibility)]) {
+  if ([mWindow respondsToSelector:@selector(setTitleVisibility:)]) {
     // By default, hide window titles.
     [mWindow setTitleVisibility:NSWindowTitleHidden];
+  }
+  if ([mWindow respondsToSelector:@selector(setTitlebarAppearsTransparent:)]) {
+    // By default, hide window titlebars.
+    [mWindow setTitlebarAppearsTransparent:YES];
   }
 
   // setup our notification delegate. Note that setDelegate: does NOT retain.
@@ -1857,7 +1862,14 @@ nsCocoaWindow::SetTitle(const nsAString& aTitle)
   const unichar* uniTitle = reinterpret_cast<const unichar*>(strTitle.get());
   NSString* title = [NSString stringWithCharacters:uniTitle
                                             length:strTitle.Length()];
-  [mWindow setTitle:title];
+  if ([mWindow drawsContentsIntoWindowFrame] && ![mWindow wantsTitleDrawn]) {
+    // Don't cause invalidations when the title isn't displayed.
+    [mWindow disableSetNeedsDisplay];
+    [mWindow setTitle:title];
+    [mWindow enableSetNeedsDisplay];
+  } else {
+    [mWindow setTitle:title];
+  }
 
   return NS_OK;
 
@@ -3153,9 +3165,12 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
   if (changed) {
     [self updateContentViewSize];
     [self reflowTitlebarElements];
-    if ([self respondsToSelector:@selector(setTitleVisibility)]) {
+    if ([self respondsToSelector:@selector(setTitleVisibility:)]) {
       [self setTitleVisibility:mDrawsIntoWindowFrame ? NSWindowTitleHidden :
                                                        NSWindowTitleVisible];
+    }
+    if ([self respondsToSelector:@selector(setTitlebarAppearsTransparent:)]) {
+      [self setTitlebarAppearsTransparent:mDrawsIntoWindowFrame];
     }
   }
 }

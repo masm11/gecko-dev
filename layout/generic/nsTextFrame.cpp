@@ -4549,7 +4549,7 @@ nsContinuingTextFrame::Init(nsIContent*       aContent,
         nextContinuation = nextContinuation->GetNextContinuation();
       }
     }
-    mState |= NS_FRAME_IS_BIDI;
+    AddStateBits(NS_FRAME_IS_BIDI);
   } // prev frame is bidi
 }
 
@@ -4872,7 +4872,7 @@ nsTextFrame::CharacterDataChanged(CharacterDataChangeInfo* aInfo)
   do {
     // textFrame contained deleted text (or the insertion point,
     // if this was a pure insertion).
-    textFrame->mState &= ~TEXT_WHITESPACE_FLAGS;
+    textFrame->RemoveStateBits(TEXT_WHITESPACE_FLAGS);
     textFrame->ClearTextRuns();
 
     nsIFrame* parentOfTextFrame = textFrame->GetParent();
@@ -4976,7 +4976,6 @@ public:
   virtual bool CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder,
                                        mozilla::wr::IpcResourceUpdateQueue& aResources,
                                        const StackingContextHelper& aSc,
-                                       nsTArray<WebRenderParentCommand>& aParentCommands,
                                        WebRenderLayerManager* aManager,
                                        nsDisplayListBuilder* aDisplayListBuilder) override;
   virtual void Paint(nsDisplayListBuilder* aBuilder,
@@ -5176,7 +5175,6 @@ bool
 nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder,
                                        mozilla::wr::IpcResourceUpdateQueue& aResources,
                                        const StackingContextHelper& aSc,
-                                       nsTArray<WebRenderParentCommand>& aParentCommands,
                                        WebRenderLayerManager* aManager,
                                        nsDisplayListBuilder* aDisplayListBuilder)
 {
@@ -5204,6 +5202,7 @@ nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder
   LayerRect clipRect = LayerRect::FromUnknownRect(layoutClipRect.ToUnknownRect());
   wr::LayoutRect wrClipRect = aSc.ToRelativeLayoutRect(clipRect); // wr::ToLayoutRect(clipRect);
   wr::LayoutRect wrBoundsRect = aSc.ToRelativeLayoutRect(boundsRect); //wr::ToLayoutRect(boundsRect);
+  bool backfaceVisible = !BackfaceIsHidden();
 
   // Drawing order: selections, shadows,
   //                underline, overline, [grouped in one array]
@@ -5213,7 +5212,7 @@ nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder
   for (auto& part : mTextDrawer->GetParts()) {
     if (part.selection) {
       auto selection = part.selection.value();
-      aBuilder.PushRect(selection.rect, wrClipRect, selection.color);
+      aBuilder.PushRect(selection.rect, wrClipRect, backfaceVisible, selection.color);
     }
   }
 
@@ -5221,11 +5220,11 @@ nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder
     // WR takes the shadows in CSS-order (reverse of rendering order),
     // because the drawing of a shadow actually occurs when it's popped.
     for (const wr::TextShadow& shadow : part.shadows) {
-      aBuilder.PushTextShadow(wrBoundsRect, wrClipRect, shadow);
+      aBuilder.PushTextShadow(wrBoundsRect, wrClipRect, backfaceVisible, shadow);
     }
 
     for (const wr::Line& decoration : part.beforeDecorations) {
-      aBuilder.PushLine(wrClipRect, decoration);
+      aBuilder.PushLine(wrClipRect, backfaceVisible, decoration);
     }
 
     for (const mozilla::layout::TextRunFragment& text : part.text) {
@@ -5236,11 +5235,12 @@ nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder
       color.a *= mOpacity;
 
       aManager->WrBridge()->PushGlyphs(aBuilder, text.glyphs, text.font,
-                                       color, aSc, boundsRect, clipRect);
+                                       color, aSc, boundsRect, clipRect,
+                                       backfaceVisible);
     }
 
     for (const wr::Line& decoration : part.afterDecorations) {
-      aBuilder.PushLine(wrClipRect, decoration);
+      aBuilder.PushLine(wrClipRect, backfaceVisible, decoration);
     }
 
     for (size_t i = 0; i < part.shadows.Length(); ++i) {
@@ -10320,7 +10320,7 @@ nsTextFrame::IsEmpty()
   bool isEmpty =
     IsAllWhitespace(mContent->GetText(),
                     textStyle->mWhiteSpace != mozilla::StyleWhiteSpace::PreLine);
-  mState |= (isEmpty ? TEXT_IS_ONLY_WHITESPACE : TEXT_ISNOT_ONLY_WHITESPACE);
+  AddStateBits(isEmpty ? TEXT_IS_ONLY_WHITESPACE : TEXT_ISNOT_ONLY_WHITESPACE);
   return isEmpty;
 }
 

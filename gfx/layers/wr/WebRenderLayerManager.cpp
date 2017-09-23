@@ -110,6 +110,7 @@ WebRenderLayerManager::DoDestroy(bool aIsSync)
   }
 
   mLastCanvasDatas.Clear();
+  RemoveUnusedAndResetWebRenderUserData();
 
   if (mTransactionIdAllocator) {
     // Make sure to notify the refresh driver just in case it's waiting on a
@@ -256,11 +257,6 @@ WebRenderLayerManager::CreateWebRenderCommandsFromDisplayList(nsDisplayList* aDi
       continue;
     }
 
-    if (item->BackfaceIsHidden() && aSc.IsBackfaceVisible()) {
-      item->Destroy(aDisplayListBuilder);
-      continue;
-    }
-
     savedItems.AppendToTop(item);
 
     bool forceNewLayerData = false;
@@ -340,7 +336,7 @@ WebRenderLayerManager::CreateWebRenderCommandsFromDisplayList(nsDisplayList* aDi
 
       // Note: this call to CreateWebRenderCommands can recurse back into
       // this function if the |item| is a wrapper for a sublist.
-      if (!item->CreateWebRenderCommands(aBuilder, aResources, aSc, mParentCommands, this,
+      if (!item->CreateWebRenderCommands(aBuilder, aResources, aSc, this,
                                          aDisplayListBuilder)) {
         PushItemAsImage(item, aBuilder, aResources, aSc, aDisplayListBuilder);
       }
@@ -390,6 +386,7 @@ Maybe<wr::ImageKey>
 WebRenderLayerManager::CreateImageKey(nsDisplayItem* aItem,
                                       ImageContainer* aContainer,
                                       mozilla::wr::DisplayListBuilder& aBuilder,
+                                      mozilla::wr::IpcResourceUpdateQueue& aResources,
                                       const StackingContextHelper& aSc,
                                       gfx::IntSize& aSize)
 {
@@ -408,6 +405,9 @@ WebRenderLayerManager::CreateImageKey(nsDisplayItem* aItem,
     if (!aContainer->GetScaleHint().IsEmpty()) {
       scaleToSize = Some(aContainer->GetScaleHint());
     }
+    // TODO!
+    // We appear to be using the image bridge for a lot (most/all?) of
+    // layers-free image handling and that breaks frame consistency.
     imageData->CreateAsyncImageWebRenderCommands(aBuilder,
                                                  aContainer,
                                                  aSc,
@@ -416,7 +416,8 @@ WebRenderLayerManager::CreateImageKey(nsDisplayItem* aItem,
                                                  gfx::Matrix4x4(),
                                                  scaleToSize,
                                                  wr::ImageRendering::Auto,
-                                                 wr::MixBlendMode::Normal);
+                                                 wr::MixBlendMode::Normal,
+                                                 !aItem->BackfaceIsHidden());
     return Nothing();
   }
 
@@ -427,18 +428,21 @@ WebRenderLayerManager::CreateImageKey(nsDisplayItem* aItem,
   mozilla::layers::Image* image = autoLock.GetImage();
   aSize = image->GetSize();
 
-  return imageData->UpdateImageKey(aContainer);
+  return imageData->UpdateImageKey(aContainer, aResources);
 }
 
 bool
 WebRenderLayerManager::PushImage(nsDisplayItem* aItem,
                                  ImageContainer* aContainer,
                                  mozilla::wr::DisplayListBuilder& aBuilder,
+                                 mozilla::wr::IpcResourceUpdateQueue& aResources,
                                  const StackingContextHelper& aSc,
                                  const LayerRect& aRect)
 {
   gfx::IntSize size;
-  Maybe<wr::ImageKey> key = CreateImageKey(aItem, aContainer, aBuilder, aSc, size);
+  Maybe<wr::ImageKey> key = CreateImageKey(aItem, aContainer,
+                                          aBuilder, aResources,
+                                          aSc, size);
   if (aContainer->IsAsync()) {
     // Async ImageContainer does not create ImageKey, instead it uses Pipeline.
     MOZ_ASSERT(key.isNothing());
@@ -450,7 +454,7 @@ WebRenderLayerManager::PushImage(nsDisplayItem* aItem,
 
   auto r = aSc.ToRelativeLayoutRect(aRect);
   SamplingFilter sampleFilter = nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame());
-  aBuilder.PushImage(r, r, wr::ToImageRendering(sampleFilter), key.value());
+  aBuilder.PushImage(r, r, !aItem->BackfaceIsHidden(), wr::ToImageRendering(sampleFilter), key.value());
 
   return true;
 }
@@ -614,7 +618,7 @@ WebRenderLayerManager::GenerateFallbackData(nsDisplayItem* aItem,
       // Force update the key in fallback data since we repaint the image in this path.
       // If not force update, fallbackData may reuse the original key because it
       // doesn't know UpdateImageHelper already updated the image container.
-      if (!fallbackData->UpdateImageKey(imageContainer, true)) {
+      if (!fallbackData->UpdateImageKey(imageContainer, aResources, true)) {
         return nullptr;
       }
     }
@@ -676,6 +680,7 @@ WebRenderLayerManager::PushItemAsImage(nsDisplayItem* aItem,
   SamplingFilter sampleFilter = nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame());
   aBuilder.PushImage(dest,
                      dest,
+                     !aItem->BackfaceIsHidden(),
                      wr::ToImageRendering(sampleFilter),
                      fallbackData->GetKey().value());
   return true;
@@ -764,6 +769,10 @@ WebRenderLayerManager::EndTransactionInternal(DrawPaintedLayerCallback aCallback
       }
       mLayerScrollData.clear();
       mClipIdCache.clear();
+
+      // Remove the user data those are not displayed on the screen and
+      // also reset the data to unused for next transaction.
+      RemoveUnusedAndResetWebRenderUserData();
     } else {
       for (auto iter = mLastCanvasDatas.Iter(); !iter.Done(); iter.Next()) {
         RefPtr<WebRenderCanvasData> canvasData = iter.Get()->GetKey();
@@ -953,9 +962,16 @@ WebRenderLayerManager::AddCompositorAnimationsIdForDiscard(uint64_t aId)
 }
 
 void
+WebRenderLayerManager::KeepCompositorAnimationsIdAlive(uint64_t aId)
+{
+  mDiscardedCompositorAnimationsIds.RemoveElement(aId);
+}
+
+void
 WebRenderLayerManager::DiscardCompositorAnimations()
 {
-  if (WrBridge()->IPCOpen() && !mDiscardedCompositorAnimationsIds.IsEmpty()) {
+  if (WrBridge()->IPCOpen() &&
+      !mDiscardedCompositorAnimationsIds.IsEmpty()) {
     WrBridge()->
       SendDeleteCompositorAnimations(mDiscardedCompositorAnimationsIds);
   }
