@@ -40,7 +40,6 @@ static const char sPrintSettingsServiceContractID[] = "@mozilla.org/gfx/printset
 
 // Printing
 #include "nsIWebBrowserPrint.h"
-#include "nsIDOMHTMLFrameElement.h"
 #include "nsIDOMHTMLIFrameElement.h"
 
 // Print Preview
@@ -104,8 +103,6 @@ static const char kPrintingPromptService[] = "@mozilla.org/embedcomp/printingpro
 #include "nsILayoutHistoryState.h"
 #include "nsFrameManager.h"
 #include "mozilla/ReflowInput.h"
-#include "nsIDOMHTMLAnchorElement.h"
-#include "nsIDOMHTMLAreaElement.h"
 #include "nsIDOMHTMLLinkElement.h"
 #include "nsIDOMHTMLImageElement.h"
 #include "nsIContentViewerContainer.h"
@@ -117,6 +114,7 @@ static const char kPrintingPromptService[] = "@mozilla.org/embedcomp/printingpro
 #include "nsCDefaultURIFixup.h"
 #include "nsIURIFixup.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLFrameElement.h"
 #include "nsContentList.h"
 #include "nsIChannel.h"
 #include "xpcpublic.h"
@@ -1379,11 +1377,9 @@ nsPrintEngine::MapContentForPO(const UniquePtr<nsPrintObject>& aPO,
       // XXX If a subdocument has no onscreen presentation, there will be no PO
       //     This is even if there should be a print presentation
       if (po) {
-
-        nsCOMPtr<nsIDOMHTMLFrameElement> frame(do_QueryInterface(aContent));
         // "frame" elements not in a frameset context should be treated
         // as iframes
-        if (frame && po->mParent->mFrameType == eFrameSet) {
+        if (aContent->IsHTMLElement(nsGkAtoms::frame) && po->mParent->mFrameType == eFrameSet) {
           po->mFrameType = eFrame;
         } else {
           // Assume something iframe-like, i.e. iframe, object, or embed

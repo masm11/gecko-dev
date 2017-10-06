@@ -2006,6 +2006,10 @@ BuildTextRunsScanner::GetNextBreakBeforeFrame(uint32_t* aIndex)
   return static_cast<nsTextFrame*>(mLineBreakBeforeFrames.ElementAt(index));
 }
 
+// Bug 1403220: Suspected MSVC PGO miscompilation
+#if defined(_MSC_VER) && defined(_M_IX86)
+#pragma optimize("", off)
+#endif
 static gfxFontGroup*
 GetFontGroupForFrame(const nsIFrame* aFrame, float aFontSizeInflation,
                      nsFontMetrics** aOutFontMetrics = nullptr)
@@ -2024,6 +2028,9 @@ GetFontGroupForFrame(const nsIFrame* aFrame, float aFontSizeInflation,
   // not actually happen. But we should fix this.
   return fontGroup;
 }
+#if defined(_MSC_VER) && defined(_M_IX86)
+#pragma optimize("", on)
+#endif
 
 static already_AddRefed<DrawTarget>
 CreateReferenceDrawTarget(const nsTextFrame* aTextFrame)
@@ -5181,11 +5188,9 @@ nsDisplayText::CreateWebRenderCommands(mozilla::wr::DisplayListBuilder& aBuilder
                                        WebRenderLayerManager* aManager,
                                        nsDisplayListBuilder* aDisplayListBuilder)
 {
-  if (aManager->IsLayersFreeTransaction()) {
-    ContainerLayerParameters parameter;
-    if (GetLayerState(aDisplayListBuilder, aManager, parameter) != LAYER_ACTIVE) {
-      return false;
-    }
+  ContainerLayerParameters parameter;
+  if (GetLayerState(aDisplayListBuilder, aManager, parameter) != LAYER_ACTIVE) {
+    return false;
   }
 
   if (mBounds.IsEmpty()) {
@@ -6430,7 +6435,7 @@ nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
 
   auto* textDrawer = aParams.context->GetTextDrawer();
   if (textDrawer) {
-    wr::TextShadow wrShadow;
+    wr::Shadow wrShadow;
 
     wrShadow.offset = {
       PresContext()->AppUnitsToFloatDevPixels(aShadowDetails->mXOffset),
@@ -7262,6 +7267,10 @@ DrawTextRun(const gfxTextRun* aTextRun,
 
     if ((NS_GET_A(aParams.textStrokeColor) != 0 || textDrawer) &&
         aParams.textStrokeWidth != 0.0f) {
+      if (textDrawer) {
+        textDrawer->FoundUnsupportedFeature();
+        return;
+      }
       StrokeOptions strokeOpts;
       params.drawMode |= DrawMode::GLYPH_STROKE;
       params.textStrokeColor = aParams.textStrokeColor;

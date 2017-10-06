@@ -1260,8 +1260,10 @@ nsFrameConstructorState::GetOutOfFlowFrameItems(nsIFrame* aNewFrame,
     if (disp->mTopLayer != NS_STYLE_TOP_LAYER_NONE) {
       *aPlaceholderType = PLACEHOLDER_FOR_TOPLAYER;
       if (disp->mPosition == NS_STYLE_POSITION_FIXED) {
+        *aPlaceholderType |= PLACEHOLDER_FOR_FIXEDPOS;
         return &mTopLayerFixedItems;
       }
+      *aPlaceholderType |= PLACEHOLDER_FOR_ABSPOS;
       return &mTopLayerAbsoluteItems;
     }
     if (disp->mPosition == NS_STYLE_POSITION_ABSOLUTE) {
@@ -1303,11 +1305,11 @@ nsFrameConstructorState::ConstructBackdropFrameFor(nsIContent* aContent,
   nsAbsoluteItems* frameItems = GetOutOfFlowFrameItems(backdropFrame,
                                                        true, true, false,
                                                        &placeholderType);
-  MOZ_ASSERT(placeholderType == PLACEHOLDER_FOR_TOPLAYER);
+  MOZ_ASSERT(placeholderType & PLACEHOLDER_FOR_TOPLAYER);
 
   nsIFrame* placeholder = nsCSSFrameConstructor::
     CreatePlaceholderFrameFor(mPresShell, aContent, backdropFrame,
-                              frame, nullptr, PLACEHOLDER_FOR_TOPLAYER);
+                              frame, nullptr, placeholderType);
   nsFrameList temp(placeholder, placeholder);
   frame->SetInitialChildList(nsIFrame::kBackdropList, temp);
 
@@ -1361,7 +1363,7 @@ nsFrameConstructorState::AddChild(nsIFrame* aNewFrame,
     // Add the placeholder frame to the flow
     aFrameItems.AddChild(placeholderFrame);
 
-    if (placeholderType == PLACEHOLDER_FOR_TOPLAYER) {
+    if (placeholderType & PLACEHOLDER_FOR_TOPLAYER) {
       ConstructBackdropFrameFor(aContent, aNewFrame);
     }
   }
@@ -1765,7 +1767,7 @@ nsCSSFrameConstructor::CreateGeneratedContent(nsFrameConstructorState& aState,
                                   nullptr, nullptr);
 
     case eStyleContentType_Attr: {
-      nsCOMPtr<nsIAtom> attrName;
+      RefPtr<nsIAtom> attrName;
       int32_t attrNameSpace = kNameSpaceID_None;
       nsAutoString contentString(data.GetString());
 
@@ -3789,8 +3791,8 @@ nsCSSFrameConstructor::FindInputData(Element* aElement,
                                      nsStyleContext* aStyleContext)
 {
   static const FrameConstructionDataByInt sInputData[] = {
-    SIMPLE_INT_CREATE(NS_FORM_INPUT_CHECKBOX, NS_NewGfxCheckboxControlFrame),
-    SIMPLE_INT_CREATE(NS_FORM_INPUT_RADIO, NS_NewGfxRadioControlFrame),
+    SIMPLE_INT_CREATE(NS_FORM_INPUT_CHECKBOX, NS_NewCheckboxRadioFrame),
+    SIMPLE_INT_CREATE(NS_FORM_INPUT_RADIO, NS_NewCheckboxRadioFrame),
     SIMPLE_INT_CREATE(NS_FORM_INPUT_FILE, NS_NewFileControlFrame),
     SIMPLE_INT_CHAIN(NS_FORM_INPUT_IMAGE,
                      nsCSSFrameConstructor::FindImgControlData),

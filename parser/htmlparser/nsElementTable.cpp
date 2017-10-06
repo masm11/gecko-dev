@@ -34,6 +34,7 @@ struct HTMLElement
 // values for the abovementioned tags at some point.
 //
 static const HTMLElement gHTMLElements[] = {
+  // clang-format off
   ELEM(unknown,     ____, ____)
   ELEM(a,           ____, true)
   ELEM(abbr,        ____, true)
@@ -144,6 +145,7 @@ static const HTMLElement gHTMLElements[] = {
   ELEM(section,     true, true)
   ELEM(select,      ____, true)
   ELEM(small,       ____, true)
+  ELEM(slot,        ____, true)
   ELEM(source,      ____, ____)
   ELEM(span,        ____, true)
   ELEM(strike,      ____, true)
@@ -180,6 +182,7 @@ static const HTMLElement gHTMLElements[] = {
   ELEM(markupDecl,  ____, true)
   ELEM(instruction, ____, true)
   ELEM(userdefined, ____, true)
+  // clang-format on
 };
 
 #undef ELEM

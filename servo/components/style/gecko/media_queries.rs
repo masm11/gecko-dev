@@ -18,7 +18,6 @@ use gecko_bindings::structs::{nsCSSKeyword, nsCSSProps_KTableEntry, nsCSSValue, 
 use gecko_bindings::structs::{nsMediaExpression_Range, nsMediaFeature};
 use gecko_bindings::structs::{nsMediaFeature_ValueType, nsMediaFeature_RangeType, nsMediaFeature_RequirementFlags};
 use gecko_bindings::structs::{nsPresContext, RawGeckoPresContextOwned};
-use gecko_bindings::structs::nsIAtom;
 use media_queries::MediaType;
 use parser::ParserContext;
 use properties::{ComputedValues, StyleBuilder};
@@ -165,7 +164,7 @@ impl Device {
             // mMediaEmulated.
             let context = self.pres_context();
             let medium_to_use = if context.mIsEmulatingMedia() != 0 {
-                context.mMediaEmulated.raw::<nsIAtom>()
+                context.mMediaEmulated.mRawPtr
             } else {
                 context.mMedium
             };
@@ -374,8 +373,18 @@ impl MediaExpressionValue {
                 Some(MediaExpressionValue::BoolInteger(i == 1))
             }
             nsMediaFeature_ValueType::eResolution => {
-                debug_assert!(css_value.mUnit == nsCSSUnit::eCSSUnit_Inch);
-                Some(MediaExpressionValue::Resolution(Resolution::Dpi(css_value.float_unchecked())))
+                // This is temporarily more complicated to allow Gecko Bug
+                // 1376931 to land. Parts of that bug will supply pixel values
+                // and expect them to be passed through without conversion.
+                // After all parts of that bug have landed, Bug 1404097 will
+                // return this function to once again only allow one type of
+                // value to be accepted: this time, only pixel values.
+                let res = match css_value.mUnit {
+                    nsCSSUnit::eCSSUnit_Pixel => Resolution::Dppx(css_value.float_unchecked()),
+                    nsCSSUnit::eCSSUnit_Inch  => Resolution::Dpi(css_value.float_unchecked()),
+                    _                         => unreachable!(),
+                };
+                Some(MediaExpressionValue::Resolution(res))
             }
             nsMediaFeature_ValueType::eEnumerated => {
                 let value = css_value.integer_unchecked() as i16;
@@ -695,11 +704,12 @@ impl Expression {
         self.evaluate_against(device, &value, quirks_mode)
     }
 
-    fn evaluate_against(&self,
-                        device: &Device,
-                        actual_value: &MediaExpressionValue,
-                        quirks_mode: QuirksMode)
-                        -> bool {
+    fn evaluate_against(
+        &self,
+        device: &Device,
+        actual_value: &MediaExpressionValue,
+        quirks_mode: QuirksMode,
+    ) -> bool {
         use self::MediaExpressionValue::*;
         use std::cmp::Ordering;
 
@@ -721,8 +731,7 @@ impl Expression {
             font_metrics_provider: &provider,
             cached_system_font: None,
             in_media_query: true,
-            // TODO: pass the correct value here.
-            quirks_mode: quirks_mode,
+            quirks_mode,
             for_smil_animation: false,
             for_non_inherited_property: None,
             rule_cache_conditions: RefCell::new(&mut conditions),

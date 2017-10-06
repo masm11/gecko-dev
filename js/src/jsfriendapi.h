@@ -1346,34 +1346,6 @@ inline bool DOMProxyIsShadowing(DOMProxyShadowsResult result) {
            result == ShadowsViaIndirectExpando;
 }
 
-// Callbacks and other information for use by the JITs when optimizing accesses
-// on xray wrappers.
-struct XrayJitInfo {
-    // Test whether a proxy handler is a cross compartment xray with no
-    // security checks.
-    bool (*isCrossCompartmentXray)(const BaseProxyHandler* handler);
-
-    // Test whether xrays with a global object's compartment have expandos of
-    // their own, instead of sharing them with Xrays from other compartments.
-    bool (*globalHasExclusiveExpandos)(JSObject* obj);
-
-    // Proxy reserved slot used by xrays in sandboxes to store their holder
-    // object.
-    size_t xrayHolderSlot;
-
-    // Reserved slot used by xray holders to store the xray's expando object.
-    size_t holderExpandoSlot;
-
-    // Reserved slot used by xray expandos to store a custom prototype.
-    size_t expandoProtoSlot;
-};
-
-JS_FRIEND_API(void)
-SetXrayJitInfo(XrayJitInfo* info);
-
-XrayJitInfo*
-GetXrayJitInfo();
-
 /* Implemented in jsdate.cpp. */
 
 /** Detect whether the internal date value is NaN. */
@@ -3089,12 +3061,6 @@ ToWindowProxyIfWindow(JSObject* obj)
  */
 extern JS_FRIEND_API(JSObject*)
 ToWindowIfWindowProxy(JSObject* obj);
-
-// Create and add the Intl.PluralRules constructor function to the provided
-// object.  This function throws if called more than once per realm/global
-// object.
-extern bool
-AddPluralRulesConstructor(JSContext* cx, JS::Handle<JSObject*> intl);
 
 // Create and add the Intl.MozDateTimeFormat constructor function to the provided
 // object.

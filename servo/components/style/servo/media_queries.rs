@@ -164,7 +164,7 @@ pub enum ExpressionKind {
 /// http://dev.w3.org/csswg/mediaqueries-3/#media1
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "servo", derive(HeapSizeOf))]
-pub struct Expression(ExpressionKind);
+pub struct Expression(pub ExpressionKind);
 
 impl Expression {
     /// The kind of expression we're, just for unit testing.
@@ -265,7 +265,7 @@ impl Range<specified::Length> {
             font_metrics_provider: &ServoMetricsProvider,
             in_media_query: true,
             cached_system_font: None,
-            quirks_mode: quirks_mode,
+            quirks_mode,
             for_smil_animation: false,
             for_non_inherited_property: None,
             rule_cache_conditions: RefCell::new(&mut conditions),

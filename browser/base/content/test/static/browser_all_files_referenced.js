@@ -47,7 +47,6 @@ var whitelist = [
   {file: "chrome://browser/content/newtab/alternativeDefaultSites.json"},
 
   // Add-on compat
-  {file: "chrome://browser/skin/devtools/common.css"},
   {file: "chrome://global/content/XPCNativeWrapper.js"},
   {file: "chrome://global/locale/brand.dtd"},
 
@@ -164,8 +163,6 @@ var whitelist = [
   {file: "chrome://pippki/content/resetpassword.xul"},
   // Bug 1351078
   {file: "resource://gre/modules/Battery.jsm"},
-  // Bug 1351079
-  {file: "resource://gre/modules/ISO8601DateUtils.jsm"},
   // Bug 1337345
   {file: "resource://gre/modules/Manifest.jsm"},
   // Bug 1351097
