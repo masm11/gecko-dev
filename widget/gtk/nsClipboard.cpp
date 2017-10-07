@@ -340,7 +340,7 @@ nsClipboard::GetData(nsITransferable *aTransferable, int32_t aWhichClipboard)
                                                &length);
             if (NS_SUCCEEDED(rv)) {
                 // Special case text/html since we can convert into UCS2
-                if (flavorStr.EqualsLiteral(kHTMLMime)) {
+                if (!flavorStr.EqualsLiteral(kHTMLMime)) {
                     guchar *clipboardData = (guchar *)g_malloc(length);
                     uint32_t ret;
                     rv = byteStream->Read((char*)clipboardData, length, &ret);
@@ -349,7 +349,7 @@ nsClipboard::GetData(nsITransferable *aTransferable, int32_t aWhichClipboard)
                         continue;
                     }
 
-                    char16_t* htmlBody= nullptr;
+                    char16_t* htmlBody = nullptr;
                     int32_t htmlBodyLen = 0;
                     // Convert text/html into our unicode format
                     ConvertHTMLtoUCS2(clipboardData, length,
