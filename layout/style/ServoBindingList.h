@@ -112,7 +112,7 @@ SERVO_BINDING_FUNC(Servo_StyleSet_NoteStyleSheetsChanged, void,
                    mozilla::OriginFlags changed_origins)
 SERVO_BINDING_FUNC(Servo_StyleSet_GetKeyframesForName, bool,
                    RawServoStyleSetBorrowed set,
-                   const nsACString* property,
+                   nsAtom* name,
                    nsTimingFunctionBorrowed timing_function,
                    RawGeckoKeyframeListBorrowedMut keyframe_list)
 SERVO_BINDING_FUNC(Servo_StyleSet_GetFontFaceRules, void,
@@ -130,7 +130,7 @@ SERVO_BINDING_FUNC(Servo_StyleSet_ResolveForDeclarations,
                    ServoStyleContextBorrowedOrNull parent_style,
                    RawServoDeclarationBlockBorrowed declarations)
 SERVO_BINDING_FUNC(Servo_SelectorList_Drop, void,
-                   RawServoSelectorList* selector_list)
+                   RawServoSelectorListOwned selector_list)
 SERVO_BINDING_FUNC(Servo_SelectorList_Parse,
                    RawServoSelectorList*,
                    const nsACString* selector_list)
@@ -587,7 +587,9 @@ SERVO_BINDING_FUNC(Servo_SetExplicitStyle, void,
                    RawGeckoElementBorrowed element,
                    ServoStyleContextBorrowed primary_style)
 SERVO_BINDING_FUNC(Servo_HasAuthorSpecifiedRules, bool,
+                   ServoStyleContextBorrowed style,
                    RawGeckoElementBorrowed element,
+                   mozilla::CSSPseudoElementType pseudo_type,
                    uint32_t rule_type_mask,
                    bool author_colors_allowed)
 

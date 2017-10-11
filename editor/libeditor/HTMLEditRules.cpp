@@ -3805,7 +3805,6 @@ HTMLEditRules::WillCSSIndent(Selection* aSelection,
 
   // Ok, now go through all the nodes and put them in a blockquote,
   // or whatever is appropriate.  Wohoo!
-  nsCOMPtr<nsINode> curParent;
   nsCOMPtr<Element> curList, curQuote;
   nsCOMPtr<nsIContent> sibling;
   int32_t listCount = arrayOfNodes.Length();
@@ -3820,8 +3819,12 @@ HTMLEditRules::WillCSSIndent(Selection* aSelection,
       continue;
     }
 
-    curParent = curNode->GetParentNode();
-    int32_t offset = curParent ? curParent->IndexOf(curNode) : -1;
+    int32_t offset;
+    nsCOMPtr<nsINode> curParent =
+      EditorBase::GetNodeLocation(curNode, &offset);
+    if (!curParent) {
+      continue;
+    }
 
     // some logic for putting list items into nested lists...
     if (HTMLEditUtils::IsList(curParent)) {
@@ -3992,7 +3995,6 @@ HTMLEditRules::WillHTMLIndent(Selection* aSelection,
 
   // Ok, now go through all the nodes and put them in a blockquote,
   // or whatever is appropriate.  Wohoo!
-  nsCOMPtr<nsINode> curParent;
   nsCOMPtr<nsIContent> sibling;
   nsCOMPtr<Element> curList, curQuote, indentedLI;
   int32_t listCount = arrayOfNodes.Length();
@@ -4007,8 +4009,11 @@ HTMLEditRules::WillHTMLIndent(Selection* aSelection,
       continue;
     }
 
-    curParent = curNode->GetParentNode();
-    int32_t offset = curParent ? curParent->IndexOf(curNode) : -1;
+    int32_t offset;
+    nsCOMPtr<nsINode> curParent = EditorBase::GetNodeLocation(curNode, &offset);
+    if (!curParent) {
+      continue;
+    }
 
     // some logic for putting list items into nested lists...
     if (HTMLEditUtils::IsList(curParent)) {
@@ -4798,8 +4803,11 @@ HTMLEditRules::WillAlign(Selection& aSelection,
       continue;
     }
 
-    nsCOMPtr<nsINode> curParent = curNode->GetParentNode();
-    int32_t offset = curParent ? curParent->IndexOf(curNode) : -1;
+    int32_t offset;
+    nsCOMPtr<nsINode> curParent = EditorBase::GetNodeLocation(curNode, &offset);
+    if (!curParent) {
+      continue;
+    }
 
     // Skip insignificant formatting text nodes to prevent unnecessary
     // structure splitting!
@@ -7639,11 +7647,9 @@ HTMLEditRules::AdjustSelection(Selection* aSelection,
 
   // look for a nearby text node.
   // prefer the correct direction.
-  nsCOMPtr<nsIDOMNode> nearNodeDOM = GetAsDOMNode(nearNode);
-  rv = FindNearSelectableNode(GetAsDOMNode(selNode), selOffset, aAction,
-                              address_of(nearNodeDOM));
+  rv = FindNearSelectableNode(selNode, selOffset, aAction,
+                              address_of(nearNode));
   NS_ENSURE_SUCCESS(rv, rv);
-  nearNode = do_QueryInterface(nearNodeDOM);
 
   if (!nearNode) {
     return NS_OK;
@@ -7658,28 +7664,26 @@ HTMLEditRules::AdjustSelection(Selection* aSelection,
 
 
 nsresult
-HTMLEditRules::FindNearSelectableNode(nsIDOMNode* aSelNode,
+HTMLEditRules::FindNearSelectableNode(nsINode* aSelNode,
                                       int32_t aSelOffset,
                                       nsIEditor::EDirection& aDirection,
-                                      nsCOMPtr<nsIDOMNode>* outSelectableNode)
+                                      nsCOMPtr<nsIContent>* outSelectableNode)
 {
   NS_ENSURE_TRUE(aSelNode && outSelectableNode, NS_ERROR_NULL_POINTER);
   *outSelectableNode = nullptr;
 
-  nsCOMPtr<nsIDOMNode> nearNode, curNode;
+  nsCOMPtr<nsIContent> nearNode, curNode;
   if (aDirection == nsIEditor::ePrevious) {
     NS_ENSURE_STATE(mHTMLEditor);
-    nsresult rv =
-      mHTMLEditor->GetPriorHTMLNode(aSelNode, aSelOffset, address_of(nearNode));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    nearNode = mHTMLEditor->GetPriorHTMLNode(aSelNode, aSelOffset);
+    if (NS_WARN_IF(!nearNode)) {
+      return NS_ERROR_FAILURE;
     }
   } else {
     NS_ENSURE_STATE(mHTMLEditor);
-    nsresult rv =
-      mHTMLEditor->GetNextHTMLNode(aSelNode, aSelOffset, address_of(nearNode));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    nearNode = mHTMLEditor->GetNextHTMLNode(aSelNode, aSelOffset);
+    if (NS_WARN_IF(!nearNode)) {
+      return NS_ERROR_FAILURE;
     }
   }
 
@@ -7693,17 +7697,15 @@ HTMLEditRules::FindNearSelectableNode(nsIDOMNode* aSelNode,
 
     if (aDirection == nsIEditor::ePrevious) {
       NS_ENSURE_STATE(mHTMLEditor);
-      nsresult rv = mHTMLEditor->GetPriorHTMLNode(aSelNode, aSelOffset,
-                                                  address_of(nearNode));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+      nearNode = mHTMLEditor->GetPriorHTMLNode(aSelNode, aSelOffset);
+      if (NS_WARN_IF(!nearNode)) {
+        return NS_ERROR_FAILURE;
       }
     } else {
       NS_ENSURE_STATE(mHTMLEditor);
-      nsresult rv = mHTMLEditor->GetNextHTMLNode(aSelNode, aSelOffset,
-                                                 address_of(nearNode));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+      nearNode = mHTMLEditor->GetPriorHTMLNode(aSelNode, aSelOffset);
+      if (NS_WARN_IF(!nearNode)) {
+        return NS_ERROR_FAILURE;
       }
     }
   }
@@ -7716,16 +7718,15 @@ HTMLEditRules::FindNearSelectableNode(nsIDOMNode* aSelNode,
     curNode = nearNode;
     if (aDirection == nsIEditor::ePrevious) {
       NS_ENSURE_STATE(mHTMLEditor);
-      nsresult rv =
-        mHTMLEditor->GetPriorHTMLNode(curNode, address_of(nearNode));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+      nearNode = mHTMLEditor->GetPriorHTMLNode(curNode);
+      if (NS_WARN_IF(!nearNode)) {
+        return NS_ERROR_FAILURE;
       }
     } else {
       NS_ENSURE_STATE(mHTMLEditor);
-      nsresult rv = mHTMLEditor->GetNextHTMLNode(curNode, address_of(nearNode));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+      nearNode = mHTMLEditor->GetNextHTMLNode(curNode);
+      if (NS_WARN_IF(!nearNode)) {
+        return NS_ERROR_FAILURE;
       }
     }
     NS_ENSURE_STATE(mHTMLEditor);
@@ -7738,7 +7739,7 @@ HTMLEditRules::FindNearSelectableNode(nsIDOMNode* aSelNode,
     }
 
     // otherwise, ok, we have found a good spot to put the selection
-    *outSelectableNode = do_QueryInterface(nearNode);
+    *outSelectableNode = nearNode;
   }
   return NS_OK;
 }
@@ -8788,8 +8789,11 @@ HTMLEditRules::WillAbsolutePosition(Selection& aSelection,
 
     nsCOMPtr<nsIContent> sibling;
 
-    nsCOMPtr<nsINode> curParent = curNode->GetParentNode();
-    int32_t offset = curParent ? curParent->IndexOf(curNode) : -1;
+    int32_t offset;
+    nsCOMPtr<nsINode> curParent = EditorBase::GetNodeLocation(curNode, &offset);
+    if (!curParent) {
+      continue;
+    }
 
     // Some logic for putting list items into nested lists...
     if (HTMLEditUtils::IsList(curParent)) {

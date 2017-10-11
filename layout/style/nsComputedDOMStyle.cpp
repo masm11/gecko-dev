@@ -715,7 +715,7 @@ nsComputedDOMStyle::DoGetStyleContextNoFlush(Element* aElement,
           } else {
             return presContext->StyleSet()->AsServo()->
               GetBaseContextForElement(aElement, presContext,
-                                       aPseudo, pseudoType, result->AsServo());
+                                       pseudoType, result->AsServo());
           }
         }
 
@@ -742,13 +742,13 @@ nsComputedDOMStyle::DoGetStyleContextNoFlush(Element* aElement,
                                ? StyleRuleInclusion::DefaultOnly
                                : StyleRuleInclusion::All;
     RefPtr<ServoStyleContext> result =
-       servoSet->ResolveStyleLazily(aElement, pseudoType, aPseudo, rules);
+       servoSet->ResolveStyleLazily(aElement, pseudoType, rules);
     if (aAnimationFlag == eWithAnimation) {
       return result.forget();
     }
 
     return servoSet->GetBaseContextForElement(aElement, presContext,
-                                              aPseudo, pseudoType, result);
+                                              pseudoType, result);
   }
 
   RefPtr<GeckoStyleContext> parentContext;
@@ -6867,12 +6867,13 @@ nsComputedDOMStyle::DoGetAnimationName()
     const StyleAnimation *animation = &display->mAnimations[i];
     RefPtr<nsROCSSPrimitiveValue> property = new nsROCSSPrimitiveValue;
 
-    const nsString& name = animation->GetName();
-    if (name.IsEmpty()) {
+    nsAtom* name = animation->GetName();
+    if (name == nsGkAtoms::_empty) {
       property->SetIdent(eCSSKeyword_none);
     } else {
+      nsDependentAtomString nameStr(name);
       nsAutoString escaped;
-      nsStyleUtil::AppendEscapedCSSIdent(animation->GetName(), escaped);
+      nsStyleUtil::AppendEscapedCSSIdent(nameStr, escaped);
       property->SetString(escaped); // really want SetIdent
     }
     valueList->AppendCSSValue(property.forget());

@@ -33,7 +33,7 @@ byteorder = "1.0"
 canvas_traits = {path = "../canvas_traits"}
 caseless = "0.1.0"
 cookie = "0.6"
-cssparser = "0.21.1"
+cssparser = "0.22.0"
 deny_public_fields = {path = "../deny_public_fields"}
 devtools_traits = {path = "../devtools_traits"}
 dom_struct = {path = "../dom_struct"}
@@ -84,7 +84,7 @@ servo_url = {path = "../url"}
 smallvec = "0.4"
 style = {path = "../style"}
 style_traits = {path = "../style_traits"}
-swapper = "0.0.4"
+swapper = "0.1"
 time = "0.1.12"
 unicode-segmentation = "1.1.0"
 url = {version = "1.2", features = ["heap_size", "query_encoding"]}
