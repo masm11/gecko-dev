@@ -102,14 +102,14 @@ reftest-stylo:
     - reftest-stylo
 
 qr-talos:
-    - talos-chrome
+    # - talos-chrome # regressed, see bug 1408418
     - talos-dromaeojs
     - talos-g1
     # - talos-g2 # doesn't work with QR yet
     - talos-g3
     - talos-g4
     - talos-g5
-    # - talos-other # fails with layers-free
+    - talos-other
     # - talos-svgr # fails with layers-free
     - talos-tp5o
     - talos-perf-reftest
