@@ -3132,6 +3132,13 @@ pref("layout.display-list.dump", false);
 pref("layout.display-list.dump-content", false);
 pref("layout.display-list.dump-parent", false);
 
+// Toggle retaining display lists between paints
+#ifdef ANDROID
+pref("layout.display-list.retain", false);
+#else
+pref("layout.display-list.retain", false);
+#endif
+
 // pref to control whether layout warnings that are hit quite often are enabled
 pref("layout.spammy_warnings.enabled", false);
 
@@ -3703,7 +3710,11 @@ pref("font.name-list.sans-serif.ja", "Meiryo, Yu Gothic, MS PGothic, MS Gothic, 
 pref("font.name-list.monospace.ja", "MS Gothic, MS Mincho, Meiryo, Yu Gothic, Yu Mincho, MS PGothic, MS PMincho");
 
 pref("font.name-list.serif.ko", "Batang, Gulim");
+#ifdef EARLY_BETA_OR_EARLIER
+pref("font.name-list.sans-serif.ko", "Malgun Gothic, Gulim");
+#else
 pref("font.name-list.sans-serif.ko", "Gulim, Malgun Gothic");
+#endif
 pref("font.name-list.monospace.ko", "GulimChe");
 pref("font.name-list.cursive.ko", "Gungsuh");
 
