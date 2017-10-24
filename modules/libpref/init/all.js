@@ -1279,7 +1279,9 @@ pref("dom.require_user_interaction_for_beforeunload", true);
 pref("dom.disable_open_during_load",                false);
 pref("dom.popup_maximum",                           20);
 pref("dom.popup_allowed_events", "change click dblclick mouseup pointerup notificationclick reset submit touchend");
+
 pref("dom.disable_open_click_delay", 1000);
+pref("dom.serviceWorkers.disable_open_click_delay", 1000);
 
 pref("dom.storage.enabled", true);
 pref("dom.storage.default_quota",      5120);
@@ -3362,6 +3364,9 @@ pref("dom.ipc.processCount.webLargeAllocation", 10);
 
 // Enable the Large-Allocation header
 pref("dom.largeAllocationHeader.enabled", true);
+
+// Disable e10s for Gecko by default. This is overridden in firefox.js.
+pref("browser.tabs.remote.autostart", false);
 
 // Pref to control whether we use separate content processes for top-level load
 // of file:// URIs.
