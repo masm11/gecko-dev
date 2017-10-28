@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=2 sw=2 et tw=78:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
@@ -5098,6 +5098,26 @@ public:
 
   virtual bool ShouldBuildLayerEvenIfInvisible(nsDisplayListBuilder* aBuilder) const override;
 
+  virtual bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override
+  {
+    return mShouldFlatten;
+  }
+
+  void SetShouldFlattenAway(bool aShouldFlatten)
+  {
+    mShouldFlatten = aShouldFlatten;
+  }
+
+  virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
+                                   LayerManager* aManager,
+                                   const ContainerLayerParameters& aParameters) override
+  {
+    if (mShouldFlatten) {
+      return mozilla::LAYER_NONE;
+    }
+    return nsDisplayOwnLayer::GetLayerState(aBuilder, aManager, aParameters);
+  }
+
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
                                    bool* aSnap) const override;
 
@@ -5109,6 +5129,7 @@ public:
 protected:
   ViewID mScrollParentId;
   bool mForceDispatchToContentRegion;
+  bool mShouldFlatten;
   nsSubDocumentFrame* mSubDocFrame;
 };
 
@@ -5848,15 +5869,16 @@ public:
     FrameTransformProperties(const nsIFrame* aFrame,
                              float aAppUnitsPerPixel,
                              const nsRect* aBoundsOverride);
-    FrameTransformProperties(nsCSSValueSharedList* aTransformList,
+    FrameTransformProperties(RefPtr<const nsCSSValueSharedList>&&
+                               aTransformList,
                              const Point3D& aToTransformOrigin)
       : mFrame(nullptr)
-      , mTransformList(aTransformList)
+      , mTransformList(mozilla::Move(aTransformList))
       , mToTransformOrigin(aToTransformOrigin)
     {}
 
     const nsIFrame* mFrame;
-    RefPtr<nsCSSValueSharedList> mTransformList;
+    const RefPtr<const nsCSSValueSharedList> mTransformList;
     const Point3D mToTransformOrigin;
   };
 
