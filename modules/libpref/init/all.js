@@ -5230,11 +5230,6 @@ pref("memory.ghost_window_timeout_seconds", 60);
 // back to the system.
 pref("memory.free_dirty_pages", true);
 
-// Disable the Linux-specific, system-wide memory reporter.
-#ifdef XP_LINUX
-pref("memory.system_memory_reporter", false);
-#endif
-
 // Don't dump memory reports on OOM, by default.
 pref("memory.dump_reports_on_oom", false);
 
@@ -5939,5 +5934,5 @@ pref("layers.omtp.enabled", true);
 #else
 pref("layers.omtp.enabled", false);
 #endif
-pref("layers.omtp.release-capture-on-main-thread", true);
+pref("layers.omtp.release-capture-on-main-thread", false);
 pref("layers.omtp.force-sync", false);

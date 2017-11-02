@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 sts=2 ts=8 et tw=99 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -240,10 +240,12 @@ public:
   Maybe<wr::WrClipId> GetCacheOverride(const DisplayItemClipChain* aParent);
 
   wr::WrStickyId DefineStickyFrame(const wr::LayoutRect& aContentRect,
-                                   const wr::StickySideConstraint* aTop,
-                                   const wr::StickySideConstraint* aRight,
-                                   const wr::StickySideConstraint* aBottom,
-                                   const wr::StickySideConstraint* aLeft);
+                                   const float* aTopMargin,
+                                   const float* aRightMargin,
+                                   const float* aBottomMargin,
+                                   const float* aLeftMargin,
+                                   const StickyOffsetBounds& aVerticalBounds,
+                                   const StickyOffsetBounds& aHorizontalBounds);
   void PushStickyFrame(const wr::WrStickyId& aStickyId,
                        const DisplayItemClipChain* aParent);
   void PopStickyFrame(const DisplayItemClipChain* aParent);
@@ -265,6 +267,8 @@ public:
                 const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible,
                 const wr::ColorF& aColor);
+
+  void PushClearRect(const wr::LayoutRect& aBounds);
 
   void PushLinearGradient(const wr::LayoutRect& aBounds,
                           const wr::LayoutRect& aClip,

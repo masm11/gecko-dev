@@ -2040,8 +2040,8 @@ gfxFontGroup::GetDefaultFont()
                  "invalid default font returned by GetDefaultFont");
 
     if (defaultFamily) {
-        gfxFontEntry *fe = defaultFamily->FindFontForStyle(mStyle,
-                                                           needsBold);
+        gfxFontEntry *fe =
+            defaultFamily->FindFontForStyle(mStyle, needsBold, true);
         if (fe) {
             mDefaultFont = fe->FindOrMakeFont(&mStyle, needsBold);
         }
@@ -2063,8 +2063,8 @@ gfxFontGroup::GetDefaultFont()
         pfl->GetFontFamilyList(familyList);
         numFonts = familyList.Length();
         for (uint32_t i = 0; i < numFonts; ++i) {
-            gfxFontEntry *fe = familyList[i]->FindFontForStyle(mStyle,
-                                                               needsBold);
+            gfxFontEntry *fe =
+                familyList[i]->FindFontForStyle(mStyle, needsBold, true);
             if (fe) {
                 mDefaultFont = fe->FindOrMakeFont(&mStyle, needsBold);
                 if (mDefaultFont) {
@@ -2095,7 +2095,7 @@ gfxFontGroup::GetDefaultFont()
         mFamilyList.ToString(familiesString);
         SprintfLiteral(msg, "unable to find a usable font (%.220s)",
                        NS_ConvertUTF16toUTF8(familiesString).get());
-        NS_RUNTIMEABORT(msg);
+        MOZ_CRASH_UNSAFE_OOL(msg);
     }
 
     return mDefaultFont.get();
@@ -2758,7 +2758,6 @@ gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget,
                             gfxTextRun::DetailedGlyph detailedGlyph;
                             detailedGlyph.mGlyphID = mainFont->GetSpaceGlyph();
                             detailedGlyph.mAdvance = advance;
-                            detailedGlyph.mXOffset = detailedGlyph.mYOffset = 0;
                             gfxShapedText::CompressedGlyph g;
                             g.SetComplex(true, true, 1);
                             aTextRun->SetGlyphs(aOffset + index,

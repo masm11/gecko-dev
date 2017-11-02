@@ -2344,6 +2344,10 @@ var NativeWindow = {
    *                       type: <type>,
    *                       bundle: <blob-object> }
    *
+   *        defaultCallback:
+   *                     Callback invoked when the doorhanger is dismissed without
+   *                     pressing a button.
+   *
    * @param aCategory
    *        Doorhanger type to display (e.g., LOGIN)
    */
@@ -2363,6 +2367,16 @@ var NativeWindow = {
         this._callbacksId++;
       });
 
+      this._callbacks[this._callbacksId] = {
+        cb: aOptions && aOptions.defaultCallback,
+        prompt: this._promptId,
+      };
+      if (aOptions && aOptions.defaultCallback) {
+        aOptions.defaultCallback = undefined;
+      }
+      let defaultCallback = this._callbacksId;
+      this._callbacksId++;
+
       this._promptId++;
       let json = {
         type: "Doorhanger:Add",
@@ -2372,7 +2386,8 @@ var NativeWindow = {
         // use the current tab if none is provided
         tabID: aTabID || BrowserApp.selectedTab.id,
         options: aOptions || {},
-        category: aCategory
+        category: aCategory,
+        defaultCallback: defaultCallback,
       };
       WindowEventDispatcher.sendRequest(json);
     },
@@ -2392,8 +2407,10 @@ var NativeWindow = {
 
       if (this.doorhanger._callbacks[reply_id]) {
         // Pass the value of the optional checkbox to the callback
-        let checked = data["checked"];
-        this.doorhanger._callbacks[reply_id].cb(checked, data.inputs);
+        if (this.doorhanger._callbacks[reply_id].cb) {
+          let checked = data["checked"];
+          this.doorhanger._callbacks[reply_id].cb(checked, data.inputs);
+        }
 
         let prompt = this.doorhanger._callbacks[reply_id].prompt;
         for (let id in this.doorhanger._callbacks) {
@@ -4124,7 +4141,6 @@ Tab.prototype = {
           metadata: this.metatags,
         });
 
-        // Reset isSearch so that the userRequested term will be erased on next page load
         this.metatags = null;
 
         if (docURI.startsWith("about:certerror") || docURI.startsWith("about:blocked")) {
@@ -4318,21 +4334,12 @@ Tab.prototype = {
         if (aEvent.originalTarget.defaultView != this.browser.contentWindow)
           return;
 
-        let target = aEvent.originalTarget;
-        let docURI = target.documentURI;
-        if (!docURI.startsWith("about:neterror") && !this.isSearch) {
-          // If this wasn't an error page and the user isn't search, don't retain the typed entry
-          this.userRequested = "";
-        }
-
         GlobalEventDispatcher.sendRequest({
           type: "Content:PageShow",
           tabID: this.id,
           userRequested: this.userRequested,
           fromCache: Tabs.useCache
         });
-
-        this.isSearch = false;
 
         if (!aEvent.persisted && Services.prefs.getBoolPref("browser.ui.linkify.phone")) {
           if (!this._linkifier)
@@ -4488,10 +4495,16 @@ Tab.prototype = {
       try {
         originHost = Services.io.newURI(appOrigin).host;
       } catch (e if (e.result == Cr.NS_ERROR_FAILURE)) {
-        // NS_ERROR_FAILURE can be thrown by nsIURI.host if the URI scheme does not possess a host - in this case
-        // we just act as if we have an empty host.
+        // NS_ERROR_FAILURE can be thrown by nsIURI.host if the URI scheme does not possess a host -
+        // in this case we just act as if we have an empty host.
       }
-      if (originHost != aLocationURI.host) {
+      let locationHost = "";
+      try {
+        locationHost = aLocationURI.host;
+      } catch (e if (e.result == Cr.NS_ERROR_FAILURE)) {
+        // Ditto.
+      }
+      if (originHost != locationHost || originHost == "") {
         // Note: going 'back' will not make this tab pinned again
         ss.deleteTabValue(this, "appOrigin");
       }
@@ -4500,6 +4513,13 @@ Tab.prototype = {
     // Update the page actions URI for helper apps.
     if (BrowserApp.selectedTab == this) {
       ExternalApps.updatePageActionUri(fixedURI);
+    }
+
+    if (Components.isSuccessCode(aRequest.status) &&
+        !fixedURI.displaySpec.startsWith("about:neterror") && !this.isSearch) {
+      // If this won't end up in an error page and the user isn't searching,
+      // don't retain the typed entry.
+      this.userRequested = "";
     }
 
     let message = {
@@ -4518,6 +4538,9 @@ Tab.prototype = {
     GlobalEventDispatcher.sendRequest(message);
 
     notifyManifestStatus(this);
+
+    // Reset isSearch so that the userRequested term will be erased on next location change.
+    this.isSearch = false;
 
     if (!sameDocument) {
       // XXX This code assumes that this is the earliest hook we have at which

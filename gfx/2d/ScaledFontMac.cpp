@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -18,6 +19,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 #include "nsCocoaFeatures.h"
+#include "mozilla/gfx/Logging.h"
 
 #ifdef MOZ_WIDGET_COCOA
 // prototype for private API
@@ -173,7 +175,7 @@ CalcTableChecksum(const uint32_t *tableStart, uint32_t length, bool skipChecksum
 {
     uint32_t sum = 0L;
     const uint32_t *table = tableStart;
-    const uint32_t *end = table+((length+3) & ~3) / sizeof(uint32_t);
+    const uint32_t *end = table + length / sizeof(uint32_t);
     while (table < end) {
         if (skipChecksumAdjust && (table - tableStart) == 2) {
             table++;
@@ -181,6 +183,15 @@ CalcTableChecksum(const uint32_t *tableStart, uint32_t length, bool skipChecksum
             sum += CFSwapInt32BigToHost(*table++);
         }
     }
+
+    // The length is not 4-byte aligned, but we still must process the remaining bytes.
+    if (length & 3) {
+        // Pad with zero before adding to the checksum.
+        uint32_t last = 0;
+        memcpy(&last, end, length & 3);
+        sum += CFSwapInt32BigToHost(last);
+    }
+
     return sum;
 }
 

@@ -1,4 +1,5 @@
-
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -423,6 +424,25 @@ already_AddRefed<DrawTargetCapture>
 Factory::CreateCaptureDrawTarget(BackendType aBackend, const IntSize& aSize, SurfaceFormat aFormat)
 {
   return MakeAndAddRef<DrawTargetCaptureImpl>(aBackend, aSize, aFormat);
+}
+
+already_AddRefed<DrawTargetCapture>
+Factory::CreateCaptureDrawTargetForData(BackendType aBackend,
+                                        const IntSize &aSize,
+                                        SurfaceFormat aFormat,
+                                        int32_t aStride,
+                                        size_t aSurfaceAllocationSize)
+{
+  MOZ_ASSERT(aSurfaceAllocationSize && aStride);
+
+  BackendType type = aBackend;
+  if (!Factory::DoesBackendSupportDataDrawtarget(aBackend)) {
+    type = BackendType::SKIA;
+  }
+
+  RefPtr<DrawTargetCaptureImpl> dt = new DrawTargetCaptureImpl(type, aSize, aFormat);
+  dt->InitForData(aStride, aSurfaceAllocationSize);
+  return dt.forget();
 }
 
 already_AddRefed<DrawTarget>
