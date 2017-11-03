@@ -18,6 +18,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/WidgetUtils.h"
 #include <algorithm>
 
 #include "GeckoProfiler.h"
@@ -81,7 +82,6 @@
 #include "nsIPrefService.h"
 #include "nsIGConfService.h"
 #include "nsIServiceManager.h"
-#include "nsIStringBundle.h"
 #include "nsGfxCIID.h"
 #include "nsGtkUtils.h"
 #include "nsIObserverService.h"
@@ -183,8 +183,6 @@ static GdkWindow *get_inner_gdk_window (GdkWindow *aWindow,
 
 static int    is_parent_ungrab_enter(GdkEventCrossing *aEvent);
 static int    is_parent_grab_leave(GdkEventCrossing *aEvent);
-
-static void GetBrandName(nsAString& brandName);
 
 /* callbacks from widgets */
 #if (MOZ_WIDGET_GTK == 2)
@@ -1806,7 +1804,10 @@ nsWindow::SetIcon(const nsAString& aIconSpec)
 
     if (aIconSpec.EqualsLiteral("default")) {
         nsAutoString brandName;
-        GetBrandName(brandName);
+        WidgetUtils::GetBrandShortName(brandName);
+        if (brandName.IsEmpty()) {
+            brandName.AssignLiteral(u"Mozilla");
+        }
         AppendUTF16toUTF8(brandName, iconName);
         ToLowerCase(iconName);
     } else {
@@ -3023,20 +3024,26 @@ nsWindow::GetEventTimeStamp(guint32 aEventTime)
         // In this case too, just return the current timestamp.
         return TimeStamp::Now();
     }
+
+    TimeStamp eventTimeStamp;
+
     if (!mIsX11Display) {
-        // Wayland uses SYSTEM_TIME_MONOTONIC.
-        // Our posix implemententaion of TimeStamp::Now uses SYSTEM_TIME_MONOTONIC
-        //  too. Due to same implementation, we can use this via FromSystemTime.
+        // Wayland compositors use monotonic time to set timestamps.
+        int64_t timestampTime = g_get_monotonic_time() / 1000;
+        guint32 refTimeTruncated = guint32(timestampTime);
+
+        timestampTime -= refTimeTruncated - aEventTime;
         int64_t tick =
-           BaseTimeDurationPlatformUtils::TicksFromMilliseconds(aEventTime);
-        return TimeStamp::FromSystemTime(tick);
+            BaseTimeDurationPlatformUtils::TicksFromMilliseconds(timestampTime);
+        eventTimeStamp = TimeStamp::FromSystemTime(tick);
     } else {
         CurrentX11TimeGetter* getCurrentTime = GetCurrentTimeGetter();
         MOZ_ASSERT(getCurrentTime,
                    "Null current time getter despite having a window");
-        return TimeConverter().GetTimeStampFromSystemTime(aEventTime,
-                                                          *getCurrentTime);
+        eventTimeStamp = TimeConverter().GetTimeStampFromSystemTime(aEventTime,
+                                                              *getCurrentTime);
     }
+    return eventTimeStamp;
 }
 
 mozilla::CurrentX11TimeGetter*
@@ -3543,25 +3550,6 @@ nsWindow::OnTouchEvent(GdkEventTouch* aEvent)
     return TRUE;
 }
 #endif
-
-static void
-GetBrandName(nsAString& aBrandName)
-{
-    nsCOMPtr<nsIStringBundleService> bundleService =
-        do_GetService(NS_STRINGBUNDLE_CONTRACTID);
-
-    nsCOMPtr<nsIStringBundle> bundle;
-    if (bundleService)
-        bundleService->CreateBundle(
-            "chrome://branding/locale/brand.properties",
-            getter_AddRefs(bundle));
-
-    if (bundle)
-        bundle->GetStringFromName("brandShortName", aBrandName);
-
-    if (aBrandName.IsEmpty())
-        aBrandName.AssignLiteral(u"Mozilla");
-}
 
 static GdkWindow *
 CreateGdkWindow(GdkWindow *parent, GtkWidget *widget)
