@@ -384,7 +384,8 @@
 @RESPATH@/browser/components/NewTabComponents.manifest
 @RESPATH@/components/Downloads.manifest
 @RESPATH@/components/DownloadLegacy.js
-@RESPATH@/components/BrowserPageThumbs.manifest
+@RESPATH@/components/thumbnails.xpt
+@RESPATH@/components/PageThumbsComponents.manifest
 @RESPATH@/components/crashmonitor.manifest
 @RESPATH@/components/nsCrashMonitor.js
 @RESPATH@/components/toolkitsearch.manifest
@@ -454,7 +455,7 @@
 @RESPATH@/components/PageIconProtocolHandler.js
 @RESPATH@/components/PlacesCategoriesStarter.js
 @RESPATH@/components/ColorAnalyzer.js
-@RESPATH@/components/PageThumbsProtocol.js
+@RESPATH@/components/PageThumbsStorageService.js
 @RESPATH@/components/mozProtocolHandler.js
 @RESPATH@/components/mozProtocolHandler.manifest
 @RESPATH@/components/nsDefaultCLH.manifest
