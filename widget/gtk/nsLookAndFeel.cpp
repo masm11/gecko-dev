@@ -1085,6 +1085,12 @@ nsLookAndFeel::EnsureInit()
                                           false);
     }
 
+    // We need to initialize whole CSD config explicitly because it's queried
+    // as -moz-gtk* media features.
+    sCSDCloseButton = false;
+    sCSDMaximizeButton = false;
+    sCSDMinimizeButton = false;
+
     if (sCSDAvailable) {
         static auto sGtkHeaderBarGetDecorationLayoutPtr =
           (const gchar* (*)(GtkWidget*))
