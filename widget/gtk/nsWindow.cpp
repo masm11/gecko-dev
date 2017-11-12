@@ -3886,10 +3886,11 @@ nsWindow::Create(nsIWidget* aParent,
         }
     }
         break;
+
     case eWindowType_plugin:
     case eWindowType_plugin_ipc_chrome:
     case eWindowType_plugin_ipc_content:
-        MOZ_ASSERT_UNREACHABLE();
+        MOZ_ASSERT_UNREACHABLE("Unexpected eWindowType_plugin*");
         return NS_ERROR_FAILURE;
 
     case eWindowType_child: {
